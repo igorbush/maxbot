@@ -1,6 +1,7 @@
 # Секретные конфигурации и токены
 .env
 DEPLOY.md
+
 # Локальная база данных
 database.db
 database.db-journal
