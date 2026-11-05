@@ -1,5 +1,6 @@
-let currentUserId = 1001;
+let currentUserId = "1001";
 let currentUserData = null;
+let currentLeaderboardPeriod = "all_time";
 
 document.addEventListener("DOMContentLoaded", () => {
   initUserFromMAX();
@@ -11,54 +12,63 @@ function initUserFromMAX() {
   const urlUserId = urlParams.get("user_id");
 
   if (window.WebApp && window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user) {
-    currentUserId = window.WebApp.initDataUnsafe.user.id;
+    currentUserId = String(window.WebApp.initDataUnsafe.user.id);
     const demoBar = document.getElementById("demo-bar");
     if (demoBar) demoBar.style.display = "none";
   } else if (urlUserId) {
-    currentUserId = parseInt(urlUserId);
+    currentUserId = String(urlUserId);
     const demoSelect = document.getElementById("demo-user-select");
     if (demoSelect) demoSelect.value = currentUserId;
   }
 }
 
 function switchDemoUser(newUserId) {
-  currentUserId = parseInt(newUserId);
-  showToast("Переключен пользователь: ID " + currentUserId);
+  currentUserId = String(newUserId);
+  showToast("Выбран профиль: " + currentUserId);
   loadProfile();
+  const activeTab = document.querySelector(".tab-pane.active");
+  if (activeTab) {
+    const tabId = activeTab.id.replace("tab-", "");
+    if (tabId === "leaderboard") loadLeaderboard();
+    if (tabId === "achievements") loadAchievements();
+    if (tabId === "rewards") loadRewards();
+    if (tabId === "teacher") loadTeacherData();
+  }
 }
 
 async function loadProfile() {
   try {
     const res = await fetch(`/api/profile?user_id=${currentUserId}`);
-    if (!res.ok) throw new Error("Ошибка загрузки профиля");
+    if (!res.ok) throw new Error("Profile error");
     const data = await res.json();
     currentUserData = data;
 
-    document.getElementById("header-name").textContent = data.name;
+    document.getElementById("header-name").textContent = data.display_name;
     document.getElementById("header-role").textContent = data.role === "teacher" ? "Учитель 🎓" : "Школьник";
-    document.getElementById("header-coins").textContent = data.coins;
+    document.getElementById("header-coins").textContent = data.balance_spasibki;
     document.getElementById("header-avatar").textContent = data.role === "teacher" ? "👩‍🏫" : "🎒";
 
-    document.getElementById("profile-level-title").textContent = data.level.title;
-    document.getElementById("profile-level-num").textContent = `${data.level.level} ур.`;
-    document.getElementById("profile-xp-text").textContent = `${data.level.current_xp} / ${data.level.next_xp} XP`;
-    document.getElementById("profile-xp-fill").style.width = `${data.level.progress_percent}%`;
+    document.getElementById("profile-level-title").textContent = data.rank;
+    document.getElementById("profile-level-num").textContent = `${data.level} ур.`;
+    
+    const xpInLevel = data.xp % 100;
+    document.getElementById("profile-xp-text").textContent = `${xpInLevel} / 100 XP (${data.xp} всего)`;
+    document.getElementById("profile-xp-fill").style.width = `${Math.min(100, xpInLevel)}%`;
 
-    document.getElementById("profile-helped").textContent = data.helped_count;
-    document.getElementById("profile-questions").textContent = data.questions_count;
-    document.getElementById("profile-rank").textContent = `#${data.rank}`;
+    document.getElementById("profile-helped").textContent = data.helped_count || 0;
+    document.getElementById("profile-questions").textContent = data.questions_count || 0;
+    document.getElementById("profile-rank").textContent = `#${data.rank_position || 1}`;
 
     const shopCoins = document.getElementById("shop-coins");
-    if (shopCoins) shopCoins.textContent = data.coins;
+    if (shopCoins) shopCoins.textContent = data.balance_spasibki;
 
     const teacherNavBtn = document.getElementById("nav-teacher-btn");
     if (teacherNavBtn) {
-      teacherNavBtn.style.display = data.role === "teacher" ? "flex" : "none";
+      teacherNavBtn.style.display = (data.role === "teacher" || data.role === "admin" || currentUserId === "9999" || currentUserId === "teacher_1") ? "flex" : "none";
     }
 
   } catch (err) {
-    console.error(err);
-    showToast("Не удалось загрузить данные профиля");
+    showToast("Ошибка загрузки профиля");
   }
 }
 
@@ -77,42 +87,54 @@ function switchTab(tabName, btnElement) {
   if (tabName === "teacher") loadTeacherData();
 }
 
+function changeLeaderboardPeriod(period) {
+  currentLeaderboardPeriod = period;
+  document.getElementById("btn-period-all").classList.toggle("active", period === "all_time");
+  document.getElementById("btn-period-week").classList.toggle("active", period === "weekly");
+  loadLeaderboard();
+}
+
 async function loadLeaderboard() {
   const container = document.getElementById("leaderboard-container");
   container.innerHTML = '<div class="loading-spinner">Загрузка рейтинга...</div>';
 
   try {
-    const res = await fetch("/api/leaderboard");
-    const leaders = await res.json();
+    const res = await fetch(`/api/leaderboard?period=${currentLeaderboardPeriod}`);
+    const data = await res.json();
+    const leaders = data.items || [];
 
     if (!leaders.length) {
       container.innerHTML = '<p class="empty-hint">Пока нет участников в рейтинге.</p>';
       return;
     }
 
-    container.innerHTML = leaders.map((item, idx) => {
-      let rankIcon = `#${item.rank}`;
+    container.innerHTML = leaders.map(item => {
+      let rankIcon = `#${item.rank_position}`;
       let rankClass = "";
-      if (item.rank === 1) { rankIcon = "🥇"; rankClass = "rank-1"; }
-      if (item.rank === 2) { rankIcon = "🥈"; rankClass = "rank-2"; }
-      if (item.rank === 3) { rankIcon = "🥉"; rankClass = "rank-3"; }
+      if (item.rank_position === 1) { rankIcon = "🥇"; rankClass = "rank-1"; }
+      if (item.rank_position === 2) { rankIcon = "🥈"; rankClass = "rank-2"; }
+      if (item.rank_position === 3) { rankIcon = "🥉"; rankClass = "rank-3"; }
 
-      const isCurrent = item.max_user_id === currentUserId;
+      const isCurrent = String(item.max_user_id) === String(currentUserId);
 
       return `
         <div class="leader-item ${isCurrent ? 'current-user' : ''}">
           <div class="leader-rank ${rankClass}">${rankIcon}</div>
+          <div class="leader-avatar">🎒</div>
           <div class="leader-info">
-            <div class="leader-name">${item.name} ${isCurrent ? '(Вы)' : ''}</div>
-            <div class="leader-sub">${item.level_title} • ${item.helped_count} раз(а) помог</div>
+            <div class="leader-name">${escapeHtml(item.display_name)}</div>
+            <div class="leader-sub">${escapeHtml(item.rank)}</div>
           </div>
-          <div class="leader-xp">${item.xp} XP</div>
+          <div class="leader-score">
+            <div class="leader-xp">${item.xp} XP</div>
+            <div class="leader-coins">🪙 ${item.balance_spasibki}</div>
+          </div>
         </div>
       `;
     }).join("");
 
   } catch (err) {
-    container.innerHTML = '<p class="empty-hint">Ошибка загрузки рейтинга.</p>';
+    container.innerHTML = '<p class="empty-hint">Не удалось загрузить рейтинг</p>';
   }
 }
 
@@ -124,225 +146,275 @@ async function loadAchievements() {
     const res = await fetch(`/api/achievements?user_id=${currentUserId}`);
     const achievements = await res.json();
 
+    if (!achievements.length) {
+      container.innerHTML = '<p class="empty-hint">Достижения не найдены.</p>';
+      return;
+    }
+
     container.innerHTML = achievements.map(ach => {
-      const isUnlocked = ach.is_unlocked;
+      const isUnlocked = ach.unlocked;
+      const icon = ach.icon_url || "🎖";
+      let dateStr = "";
+      if (isUnlocked && ach.awarded_at) {
+        const d = new Date(ach.awarded_at);
+        dateStr = `<span class="ach-badge">Получено ${d.toLocaleDateString('ru-RU')}</span>`;
+      } else if (isUnlocked) {
+        dateStr = `<span class="ach-badge">Получено</span>`;
+      }
+
       return `
         <div class="ach-card ${isUnlocked ? 'unlocked' : 'locked'}">
-          <span class="ach-icon">${ach.icon}</span>
-          <div class="ach-title">${ach.title}</div>
-          <div class="ach-desc">${ach.description}</div>
-          <div class="ach-reward-tag">+${ach.xp_reward} XP • +${ach.coins_reward} 🪙</div>
-          ${isUnlocked ? `<div class="ach-date">Открыто ${ach.unlocked_at}</div>` : '<div class="ach-date" style="color:#718096;">🔒 Заблокировано</div>'}
+          <div class="ach-icon">${icon}</div>
+          <div class="ach-name">${escapeHtml(ach.name_ru)}</div>
+          <div class="ach-desc">${escapeHtml(ach.description_ru)}</div>
+          ${dateStr}
         </div>
       `;
     }).join("");
 
   } catch (err) {
-    container.innerHTML = '<p class="empty-hint">Ошибка загрузки достижений.</p>';
+    container.innerHTML = '<p class="empty-hint">Не удалось загрузить достижения</p>';
   }
 }
 
 async function loadRewards() {
-  const grid = document.getElementById("rewards-container");
-  const requestsList = document.getElementById("my-requests-list");
-  grid.innerHTML = '<div class="loading-spinner">Загрузка лавки...</div>';
+  const container = document.getElementById("rewards-container");
+  container.innerHTML = '<div class="loading-spinner">Загрузка витрины...</div>';
 
   try {
-    const res = await fetch(`/api/rewards?user_id=${currentUserId}`);
-    const data = await res.json();
+    const res = await fetch("/api/rewards");
+    const rewards = await res.json();
 
-    document.getElementById("shop-coins").textContent = data.user_coins;
-
-    if (!data.rewards.length) {
-      grid.innerHTML = '<p class="empty-hint">Учитель пока не добавил награды.</p>';
+    if (!rewards.length) {
+      container.innerHTML = '<p class="empty-hint">В лавке пока нет наград.</p>';
     } else {
-      grid.innerHTML = data.rewards.map(rew => {
-        const canAfford = data.user_coins >= rew.price_coins;
-        return `
-          <div class="reward-card">
-            <div class="reward-icon-box">${rew.icon}</div>
-            <div class="reward-details">
-              <div class="reward-title">${rew.title}</div>
-              <div class="reward-desc">${rew.description}</div>
-            </div>
-            <button
-              class="btn-buy"
-              ${canAfford ? '' : 'disabled'}
-              onclick="handleBuyReward(${rew.id})"
-            >
-              ${rew.price_coins} 🪙
-            </button>
+      container.innerHTML = rewards.map(r => `
+        <div class="reward-card">
+          <div class="reward-icon">🎁</div>
+          <div class="reward-info">
+            <div class="reward-title">${escapeHtml(r.title)}</div>
+            <div class="reward-desc">${escapeHtml(r.description)}</div>
+            <div class="reward-price">🪙 ${r.cost_spasibki} спасибок</div>
           </div>
-        `;
-      }).join("");
-    }
-
-    if (!data.my_requests.length) {
-      requestsList.innerHTML = '<p class="empty-hint">У вас пока нет активных запросов.</p>';
-    } else {
-      requestsList.innerHTML = data.my_requests.map(req => {
-        let statusText = "⏳ На рассмотрении";
-        let statusClass = "status-pending";
-        if (req.status === "approved") { statusText = "✅ Одобрено"; statusClass = "status-approved"; }
-        if (req.status === "rejected") { statusText = "❌ Отклонено"; statusClass = "status-rejected"; }
-
-        return `
-          <div class="req-item">
-            <div>
-              <strong>${req.reward_icon} ${req.reward_title}</strong>
-              <div style="font-size: 11px; color: var(--text-muted);">${req.created_at}</div>
-            </div>
-            <span class="status-badge ${statusClass}">${statusText}</span>
-          </div>
-        `;
-      }).join("");
-    }
-
-  } catch (err) {
-    grid.innerHTML = '<p class="empty-hint">Ошибка загрузки наград.</p>';
-  }
-}
-
-async function handleBuyReward(rewardId) {
-  try {
-    const res = await fetch("/api/rewards/buy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: currentUserId,
-        reward_id: rewardId
-      })
-    });
-    const result = await res.json();
-    if (result.success) {
-      showToast(result.message);
-      loadProfile();
-      loadRewards();
-    } else {
-      showToast(result.error || "Не удалось купить награду");
-    }
-  } catch (err) {
-    showToast("Ошибка при отправке запроса");
-  }
-}
-
-async function loadTeacherData() {
-  const reqList = document.getElementById("teacher-requests-list");
-  reqList.innerHTML = '<div class="loading-spinner">Загрузка заявок...</div>';
-
-  try {
-    const res = await fetch(`/api/teacher/requests?teacher_id=${currentUserId}`);
-    const requests = await res.json();
-
-    if (!requests.length) {
-      reqList.innerHTML = '<p class="empty-hint">Нет ожидающих заявок от учеников.</p>';
-    } else {
-      reqList.innerHTML = requests.map(req => `
-        <div class="teacher-req-item">
-          <div class="teacher-req-header">
-            <strong>${req.student_name}</strong>
-            <span style="color: var(--gold);">${req.price_coins} 🪙</span>
-          </div>
-          <div style="font-size: 13px;">Запрос: ${req.reward_icon} ${req.reward_title}</div>
-          <div style="font-size: 11px; color: var(--text-muted);">${req.created_at}</div>
-          <div class="teacher-req-actions">
-            <button class="btn btn-green flex-1" onclick="handleReviewRequest(${req.id}, 'approve')">Одобрить ✅</button>
-            <button class="btn btn-red flex-1" onclick="handleReviewRequest(${req.id}, 'reject')">Отклонить ❌</button>
+          <div class="reward-action">
+            <button class="btn btn-primary btn-sm" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>
           </div>
         </div>
       `).join("");
     }
 
-    const usersRes = await fetch("/api/demo/users");
-    const allUsers = await usersRes.json();
-    const studentSelect = document.getElementById("teacher-award-student");
-    const students = allUsers.filter(u => u.role === "student");
-
-    studentSelect.innerHTML = '<option value="">Выберите ученика...</option>' +
-      students.map(s => `<option value="${s.max_user_id}">${s.name} (${s.xp} XP)</option>`).join("");
+    loadMyClaims();
 
   } catch (err) {
-    reqList.innerHTML = '<p class="empty-hint">Ошибка доступа к учительской панели.</p>';
+    container.innerHTML = '<p class="empty-hint">Не удалось загрузить витрину наград</p>';
   }
 }
 
-async function handleReviewRequest(requestId, action) {
+async function loadMyClaims() {
+  const container = document.getElementById("my-requests-list");
   try {
-    const res = await fetch("/api/teacher/request/review", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        teacher_id: currentUserId,
-        request_id: requestId,
-        action: action
-      })
-    });
-    const result = await res.json();
-    showToast(result.message);
-    loadTeacherData();
-    loadProfile();
+    const res = await fetch(`/api/my-claims?user_id=${currentUserId}`);
+    const claims = await res.json();
+
+    if (!claims.length) {
+      container.innerHTML = '<p class="empty-hint">У вас пока нет активных запросов.</p>';
+      return;
+    }
+
+    container.innerHTML = claims.map(c => {
+      let statusText = "На рассмотрении";
+      let statusClass = "status-requested";
+      if (c.status === "approved") {
+        statusText = "Одобрено учительницей ✅";
+        statusClass = "status-approved";
+      } else if (c.status === "rejected") {
+        statusText = "Отклонено";
+        statusClass = "status-rejected";
+      }
+
+      return `
+        <div class="request-item">
+          <div>
+            <strong>${escapeHtml(c.title)}</strong>
+            <div class="leader-sub">🪙 ${c.cost_spasibki} спасибок</div>
+          </div>
+          <span class="req-status ${statusClass}">${statusText}</span>
+        </div>
+      `;
+    }).join("");
+
   } catch (err) {
-    showToast("Ошибка при рассмотрении заявки");
+    container.innerHTML = '<p class="empty-hint">Не удалось загрузить историю запросов</p>';
   }
 }
 
-async function handleCreateReward(event) {
-  event.preventDefault();
-  const title = document.getElementById("rew-title").value.trim();
-  const desc = document.getElementById("rew-desc").value.trim();
-  const price = parseInt(document.getElementById("rew-price").value);
-  const icon = document.getElementById("rew-icon").value;
-
-  try {
-    const res = await fetch("/api/teacher/reward/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        teacher_id: currentUserId,
-        title: title,
-        description: desc,
-        price_coins: price,
-        icon: icon
-      })
-    });
-    const result = await res.json();
-    showToast(result.message);
-    document.getElementById("create-reward-form").reset();
-  } catch (err) {
-    showToast("Ошибка при создании награды");
-  }
-}
-
-async function handleAwardTeacherBadge() {
-  const select = document.getElementById("teacher-award-student");
-  const studentId = select.value;
-  if (!studentId) {
-    showToast("Пожалуйста, выберите ученика!");
+async function handleClaimReward(rewardId, cost) {
+  if (currentUserData && currentUserData.balance_spasibki < cost) {
+    showToast(`Недостаточно спасибок! Нужно ${cost}, у вас ${currentUserData.balance_spasibki}`);
     return;
   }
 
   try {
-    const res = await fetch("/api/teacher/award_badge", {
+    const res = await fetch("/api/rewards/claim", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        teacher_id: currentUserId,
-        student_id: parseInt(studentId)
-      })
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": currentUserId,
+      },
+      body: JSON.stringify({ reward_id: rewardId, user_id: currentUserId })
     });
-    const result = await res.json();
-    showToast(result.message);
-    loadTeacherData();
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Ошибка обмена");
+    }
+
+    showToast("Запрос отправлен учителю!");
+    loadProfile();
+    loadRewards();
+
   } catch (err) {
-    showToast("Ошибка при вручении награды");
+    showToast(err.message || "Ошибка при обмене награды");
   }
 }
 
-function showToast(message) {
+async function loadTeacherData() {
+  const listContainer = document.getElementById("teacher-requests-list");
+  listContainer.innerHTML = '<div class="loading-spinner">Загрузка заявок...</div>';
+
+  try {
+    const res = await fetch(`/api/teacher/overview?user_id=${currentUserId}`);
+    if (!res.ok) throw new Error("Доступ только для учителей");
+    const overview = await res.json();
+
+    const claims = overview.pending_claims || [];
+    if (!claims.length) {
+      listContainer.innerHTML = '<p class="empty-hint">Нет новых заявок на рассмотрение.</p>';
+    } else {
+      listContainer.innerHTML = claims.map(c => `
+        <div class="teacher-claim-item">
+          <div class="teacher-claim-header">
+            <strong>${escapeHtml(c.student_name)} (${c.student_max_id})</strong>
+            <span>🪙 ${c.cost_spasibki}</span>
+          </div>
+          <div class="reward-desc">Запрос награды: «${escapeHtml(c.reward_title)}»</div>
+          <div class="teacher-claim-actions">
+            <button class="btn btn-primary btn-sm flex-1" onclick="handleReviewClaim(${c.claim_id}, 'approved')">Одобрить</button>
+            <button class="btn btn-outline btn-sm flex-1" onclick="handleReviewClaim(${c.claim_id}, 'rejected')">Отклонить</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    loadStudentsDropdown();
+
+  } catch (err) {
+    listContainer.innerHTML = '<p class="empty-hint">Панель доступна только с аккаунта учителя.</p>';
+  }
+}
+
+async function loadStudentsDropdown() {
+  const selectElem = document.getElementById("teacher-award-student");
+  try {
+    const res = await fetch("/api/students");
+    const students = await res.json();
+    selectElem.innerHTML = '<option value="">Выберите ученика...</option>' +
+      students.map(s => `<option value="${s.max_user_id}">${escapeHtml(s.display_name)} (${s.xp} XP, 🪙 ${s.balance_spasibki})</option>`).join("");
+  } catch (err) {
+    selectElem.innerHTML = '<option value="">Ошибка загрузки списка</option>';
+  }
+}
+
+async function handleReviewClaim(claimId, decision) {
+  try {
+    const res = await fetch("/api/teacher/review-claim", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": currentUserId,
+      },
+      body: JSON.stringify({ claim_id: claimId, decision: decision })
+    });
+
+    if (!res.ok) throw new Error("Ошибка обновления статуса");
+    showToast(decision === "approved" ? "Заявка одобрена!" : "Заявка отклонена");
+    loadTeacherData();
+
+  } catch (err) {
+    showToast("Не удалось обработать заявку");
+  }
+}
+
+async function handleCreateReward(e) {
+  e.preventDefault();
+  const title = document.getElementById("rew-title").value.trim();
+  const desc = document.getElementById("rew-desc").value.trim();
+  const price = parseInt(document.getElementById("rew-price").value);
+
+  if (!title || !desc || !price) return;
+
+  try {
+    const res = await fetch("/api/teacher/rewards", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": currentUserId,
+      },
+      body: JSON.stringify({ title: title, description: desc, cost_spasibki: price })
+    });
+
+    if (!res.ok) throw new Error("Ошибка создания");
+    showToast("Награда добавлена в лавку!");
+    document.getElementById("create-reward-form").reset();
+    document.getElementById("rew-price").value = 30;
+
+  } catch (err) {
+    showToast("Не удалось создать награду");
+  }
+}
+
+async function handleAwardTeacherBadge() {
+  const studentId = document.getElementById("teacher-award-student").value;
+  if (!studentId) {
+    showToast("Выберите ученика из списка");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/teacher/award-badge", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": currentUserId,
+      },
+      body: JSON.stringify({ student_id: studentId, badge_code: "teacher_choice" })
+    });
+
+    if (!res.ok) throw new Error("Ошибка");
+    showToast("Бейдж «Выбор учителя» успешно вручён!");
+    loadTeacherData();
+
+  } catch (err) {
+    showToast("Не удалось вручить награду");
+  }
+}
+
+function showToast(text) {
   const toast = document.getElementById("toast");
-  toast.textContent = message;
+  toast.textContent = text;
   toast.classList.remove("hidden");
-  setTimeout(() => {
+  clearTimeout(window.__toastTimeout);
+  window.__toastTimeout = setTimeout(() => {
     toast.classList.add("hidden");
-  }, 3200);
+  }, 2600);
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

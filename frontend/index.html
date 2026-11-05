@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Лига Помощников | MAX</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
   <link rel="stylesheet" href="style.css">
@@ -10,9 +10,9 @@
 <body>
 
   <div id="demo-bar" class="demo-bar">
-    <span class="demo-label">🧪 Режим теста:</span>
+    <span class="demo-label">Тестовый профиль:</span>
     <select id="demo-user-select" onchange="switchDemoUser(this.value)">
-      <option value="1001">Аркадий (Топ-1 ученик, 480 XP)</option>
+      <option value="1001">Аркадий (Ученик, 480 XP)</option>
       <option value="1002">Маша (Ученица, 290 XP)</option>
       <option value="1003">Иван (Новичок, 110 XP)</option>
       <option value="9999">Мария Ивановна (Учитель 🎓)</option>
@@ -49,7 +49,7 @@
         <div class="progress-box">
           <div class="progress-labels">
             <span>Прогресс звания</span>
-            <span id="profile-xp-text">0 / 50 XP</span>
+            <span id="profile-xp-text">0 / 100 XP</span>
           </div>
           <div class="progress-bar-bg">
             <div id="profile-xp-fill" class="progress-bar-fill" style="width: 0%;"></div>
@@ -70,21 +70,26 @@
         </div>
         <div class="card stat-card">
           <span class="stat-icon">🏆</span>
-          <span class="stat-val" id="profile-rank"># -</span>
+          <span class="stat-val" id="profile-rank"># 1</span>
           <span class="stat-title">Место в топе</span>
         </div>
       </div>
 
       <div class="card info-card">
-        <h4>💡 Как прокачать звание?</h4>
-        <p>Отвечайте на вопросы одноклассников в чате по команде <code>/ask</code>. За полезное объяснение вы получите <b>+15 XP</b> и <b>+5 спасибок</b>!</p>
+        <h4>Как прокачать звание?</h4>
+        <p>Отвечайте на вопросы одноклассников в чате по команде <code>/ask</code>. За полезное объяснение вы получите <b>+50 XP</b> и <b>+1 спасибку</b>!</p>
       </div>
     </section>
 
     <section id="tab-leaderboard" class="tab-pane">
       <div class="section-heading">
-        <h3>🏆 Доска почёта класса</h3>
+        <h3>Доска почёта класса</h3>
         <p>Топ помощников, которые активнее всех выручают друзей</p>
+      </div>
+
+      <div class="segmented-control">
+        <button class="seg-btn active" id="btn-period-all" onclick="changeLeaderboardPeriod('all_time')">Все время</button>
+        <button class="seg-btn" id="btn-period-week" onclick="changeLeaderboardPeriod('weekly')">За неделю</button>
       </div>
 
       <div class="leaderboard-list" id="leaderboard-container">
@@ -94,8 +99,8 @@
 
     <section id="tab-achievements" class="tab-pane">
       <div class="section-heading">
-        <h3>🎖 Коллекция наград</h3>
-        <p>Выполняйте учебные челленджи и открывайте редкие бейджи</p>
+        <h3>Коллекция наград</h3>
+        <p>Выполняйте учебные челленджи и открывайте бейджи</p>
       </div>
 
       <div class="achievements-grid" id="achievements-container">
@@ -105,7 +110,7 @@
 
     <section id="tab-rewards" class="tab-pane">
       <div class="section-heading">
-        <h3>🎁 Школьная лавка наград</h3>
+        <h3>Школьная лавка наград</h3>
         <p>Обменивайте заработанные спасибки на реальные бонусы от учителя</p>
       </div>
 
@@ -118,7 +123,7 @@
       </div>
 
       <div class="my-requests-section">
-        <h4>📋 Мои запросы на награды</h4>
+        <h4>Мои запросы на награды</h4>
         <div id="my-requests-list" class="requests-list">
           <p class="empty-hint">У вас пока нет активных запросов.</p>
         </div>
@@ -127,19 +132,19 @@
 
     <section id="tab-teacher" class="tab-pane">
       <div class="section-heading">
-        <h3>🎓 Кабинет учителя</h3>
+        <h3>Кабинет учителя</h3>
         <p>Управление школьными наградами и одобрение заявок учеников</p>
       </div>
 
       <div class="card teacher-card">
-        <h4>📬 Входящие заявки на награды</h4>
+        <h4>Входящие заявки на награды</h4>
         <div id="teacher-requests-list" class="teacher-requests-list">
           <div class="loading-spinner">Загрузка заявок...</div>
         </div>
       </div>
 
       <div class="card teacher-card">
-        <h4>➕ Добавить новую награду в лавку</h4>
+        <h4>Добавить новую награду в лавку</h4>
         <form id="create-reward-form" onsubmit="handleCreateReward(event)">
           <div class="form-group">
             <label>Название награды:</label>
@@ -152,18 +157,7 @@
           <div class="form-row">
             <div class="form-group flex-1">
               <label>Стоимость в спасибках 🪙:</label>
-              <input type="number" id="rew-price" value="50" min="5" max="500" required>
-            </div>
-            <div class="form-group flex-1">
-              <label>Иконка:</label>
-              <select id="rew-icon">
-                <option value="📝">📝 Домашка</option>
-                <option value="🪑">🪑 Парта</option>
-                <option value="🎯">🎯 Тема проекта</option>
-                <option value="💡">💡 Консультация</option>
-                <option value="☕️">☕️ Переменка</option>
-                <option value="⭐️">⭐️ Звезда урока</option>
-              </select>
+              <input type="number" id="rew-price" value="30" min="1" max="500" required>
             </div>
           </div>
           <button type="submit" class="btn btn-primary full-width">Опубликовать награду</button>
@@ -171,13 +165,13 @@
       </div>
 
       <div class="card teacher-card">
-        <h4>⭐️ Вручить награду «Выбор учителя»</h4>
-        <p class="form-hint">Наградите ученика за самое понятное объяснение темы (+100 XP и +50 спасибок)!</p>
+        <h4>Вручить награду «Выбор учителя»</h4>
+        <p class="form-hint">Наградите ученика за понятное объяснение (+100 XP и +20 спасибок)!</p>
         <div class="form-row">
           <select id="teacher-award-student" class="flex-1">
             <option value="">Выберите ученика...</option>
           </select>
-          <button type="button" class="btn btn-gold" onclick="handleAwardTeacherBadge()">Вручить бейдж</button>
+          <button type="button" class="btn btn-gold" onclick="handleAwardTeacherBadge()">Вручить</button>
         </div>
       </div>
     </section>
