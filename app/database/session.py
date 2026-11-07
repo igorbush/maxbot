@@ -1,6 +1,6 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlmodel import SQLModel, select, delete, or_
+from sqlmodel import SQLModel, select, delete, or_, text
 from app.config import get_settings
 from app.database.models import (
     Achievement,
@@ -138,6 +138,12 @@ async def init_db():
         await session.execute(delete(UserAchievement).where(UserAchievement.user_max_id.in_(dummy_user_ids)))
         await session.execute(delete(RewardClaim).where(RewardClaim.student_max_id.in_(dummy_user_ids)))
         await session.execute(delete(Chat).where(Chat.max_chat_id.in_(["chat_7b", "chat_8a"])))
+
+        try:
+            await session.execute(text("ALTER TABLE questions ADD COLUMN user_message_id VARCHAR"))
+            await session.commit()
+        except Exception:
+            pass
 
         dialog_subq = select(Chat.max_chat_id).where(
             or_(

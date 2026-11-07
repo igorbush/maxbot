@@ -35,6 +35,7 @@ class Question(SQLModel, table=True):
     group_chat_id: str = Field(index=True)
     group_chat_title: Optional[str] = None
     group_message_id: str = Field(index=True)
+    user_message_id: Optional[str] = Field(default=None, index=True)
     author_max_id: str = Field(index=True)
     author_name: Optional[str] = None
     text: str

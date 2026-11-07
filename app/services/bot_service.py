@@ -38,11 +38,21 @@ def build_main_menu_keyboard():
     builder.adjust(2, 2, 1)
     return builder
 
-def build_question_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.add(CallbackButton(text="↩ Ответьте реплаем на этот вопрос", payload="noop"))
-    builder.adjust(1)
-    return builder
+async def send_response_or_dm(event: MessageCreated, text: str, kb=None, is_group: bool = False):
+    attachments = [kb.as_markup()] if kb else None
+    if is_group:
+        user_id = str(event.from_user.user_id) if event.from_user else ""
+        target_uid = int(user_id) if user_id.isdigit() else None
+        user_name = extract_display_name(event.from_user)
+        if target_uid:
+            try:
+                await event.bot.send_message(user_id=target_uid, text=text, attachments=attachments)
+                await event.message.reply(text=f"{user_name}, я отправил вам информацию в личные сообщения.")
+                return
+            except Exception:
+                await event.message.reply(text=f"{user_name}, чтобы открыть меню, перейдите в личный диалог с ботом.")
+                return
+    await event.message.answer(text=text, attachments=attachments)
 
 def build_approval_keyboard(answer_id: int):
     builder = InlineKeyboardBuilder()
@@ -224,12 +234,14 @@ async def on_start_command(event: MessageCreated):
         f"Здравствуйте, {user_name}!\n\n"
         f"Лига Помощников готова к работе. Выберите действие на клавиатуре бота:"
     )
-    await event.message.answer(text=text, attachments=[kb.as_markup()])
+    await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
 @dp.message_created(Command("help"))
 async def on_help_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
+    chat_type = getattr(event.chat, "type", "") or ""
+    is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
     print(f"[БОТ] Команда /help от {user_name}")
 
     kb = build_main_menu_keyboard()
@@ -241,12 +253,14 @@ async def on_help_command(event: MessageCreated):
         f"4. Автор вопроса нажимает кнопку «Помог», и помощнику начисляется +50 XP и +1 спасибка.\n"
         f"5. Накопленные спасибки можно обменивать на награды от учителей."
     )
-    await event.message.answer(text=text, attachments=[kb.as_markup()])
+    await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
 @dp.message_created(Command("manage"))
 async def on_manage_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
+    chat_type = getattr(event.chat, "type", "") or ""
+    is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
     print(f"[БОТ] Команда /manage от {user_name}")
 
     async with async_session_factory() as session:
@@ -267,7 +281,7 @@ async def on_manage_command(event: MessageCreated):
             f"Этот раздел предназначен для преподавателей и кураторов учебных групп."
         )
 
-    await event.message.answer(text=text, attachments=[kb.as_markup()])
+    await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
 @dp.message_created(Command("ask"))
 async def on_ask_command(event: MessageCreated):
@@ -284,12 +298,12 @@ async def on_ask_command(event: MessageCreated):
     question_text = parts[1].strip() if len(parts) > 1 else ""
 
     if not question_text:
-        await event.message.answer(
+        await event.message.reply(
             text="Пожалуйста, укажите текст вопроса после команды.\n\nПример:\n/ask Ребята, как решить задачу №4 по геометрии?"
         )
         return
 
-    mid = event.message.body.mid if event.message and event.message.body else f"msg_{user_id}"
+    user_mid = str(event.message.body.mid) if event.message and event.message.body else f"msg_{user_id}"
 
     async with async_session_factory() as session:
         await ensure_user_and_chat(
@@ -305,7 +319,8 @@ async def on_ask_command(event: MessageCreated):
         q = Question(
             group_chat_id=chat_id,
             group_chat_title=chat_title,
-            group_message_id=mid,
+            group_message_id=user_mid,
+            user_message_id=user_mid,
             author_max_id=user_id,
             author_name=user_name,
             text=question_text,
@@ -315,17 +330,19 @@ async def on_ask_command(event: MessageCreated):
         await session.commit()
         await session.refresh(q)
 
-        print(f"[БОТ] Вопрос #{q.id} опубликован в чате '{chat_title}' от {user_name}")
+        card_text = (
+            f"❓ Вопрос по учёбе #{q.id}\n\n"
+            f"Автор: {user_name}\n"
+            f"Чат: {chat_title}\n\n"
+            f"«{question_text}»\n\n"
+            f"💬 Чтобы помочь, ответьте реплаем (Reply) на это сообщение!"
+        )
+        sent = await event.message.answer(text=card_text)
+        if sent and sent.message and sent.message.body and sent.message.body.mid:
+            q.group_message_id = str(sent.message.body.mid)
+            await session.commit()
 
-    kb = build_question_keyboard()
-    card_text = (
-        f"Вопрос по учёбе #{q.id}\n\n"
-        f"Автор: {user_name}\n"
-        f"Чат: {chat_title}\n\n"
-        f"«{question_text}»\n\n"
-        f"Чтобы помочь, нажмите «Ответить» (Reply) на это сообщение!"
-    )
-    await event.message.answer(text=card_text, attachments=[kb.as_markup()])
+        print(f"[БОТ] Вопрос #{q.id} опубликован в чате '{chat_title}' от {user_name}")
 
 async def sync_bot_chats(target_bot: Bot):
     try:
@@ -438,7 +455,14 @@ async def on_generic_message(event: MessageCreated):
 
     async with async_session_factory() as session:
         res_q = await session.execute(
-            select(Question).where(Question.group_message_id == parent_mid, Question.status == "open")
+            select(Question).where(
+                or_(
+                    Question.group_message_id == parent_mid,
+                    Question.user_message_id == parent_mid,
+                    Question.group_message_id.like(f"%{parent_mid}%"),
+                ),
+                Question.status == "open",
+            )
         )
         question = res_q.scalar_one_or_none()
         if not question:
@@ -471,7 +495,7 @@ async def on_generic_message(event: MessageCreated):
 
         print(f"[БОТ] Ответ на вопрос #{question.id} от {helper_name}")
 
-    author_target = int(question.author_max_id) if question.author_max_id.isdigit() else question.author_max_id
+    author_target = int(question.author_max_id) if str(question.author_max_id).isdigit() else None
     approval_kb = build_approval_keyboard(ans.id)
     dm_text = (
         f"Вам ответил(а) {helper_name} на вопрос #{question.id}:\n\n"
@@ -479,11 +503,18 @@ async def on_generic_message(event: MessageCreated):
         f"Помогло ли вам это объяснение?"
     )
 
-    try:
-        await event.bot.send_message(user_id=author_target, text=dm_text, attachments=[approval_kb.as_markup()])
-        await event.message.reply(text=f"Ответ от {helper_name} отправлен автору вопроса на подтверждение.")
-    except Exception:
-        await event.message.reply(text=f"Ответ от {helper_name} принят. Автору вопроса нужно открыть диалог с ботом для подтверждения.")
+    sent_to_author = False
+    if author_target:
+        try:
+            await event.bot.send_message(user_id=author_target, text=dm_text, attachments=[approval_kb.as_markup()])
+            sent_to_author = True
+        except Exception as e:
+            print(f"[БОТ] Не удалось отправить ЛС автору {author_target}: {e}")
+
+    if sent_to_author:
+        await event.message.reply(text=f"Ответ от {helper_name} принят и отправлен автору вопроса в личные сообщения для подтверждения.")
+    else:
+        await event.message.reply(text=f"Ответ от {helper_name} принят! Автору вопроса нужно открыть диалог с ботом, чтобы подтвердить помощь.")
 
 @dp.message_callback()
 async def on_callback_query(event: MessageCallback):
@@ -492,11 +523,6 @@ async def on_callback_query(event: MessageCallback):
     user_name = extract_display_name(event.callback.user) if event.callback else "Ученик"
 
     print(f"[БОТ] Нажата кнопка '{payload}' от {user_name} (ID: {user_id})")
-
-    if payload == "noop":
-        if event.callback and event.callback.callback_id:
-            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответьте реплаем на вопрос.")
-        return
 
     if payload.startswith("help_accept:"):
         ans_id = int(payload.split(":")[1])
@@ -517,10 +543,8 @@ async def on_callback_query(event: MessageCallback):
 
             await GamificationService.award_gratitude(
                 session=session,
-                question_id=question.id,
-                answer_id=answer.id,
-                author_id=user_id,
-                helper_id=answer.author_max_id,
+                question=question,
+                answer=answer,
             )
 
             print(f"[БОТ] Помощь подтверждена: вопрос #{question.id}, {answer.author_name} получил +50 XP и +1 спасибку")
@@ -531,9 +555,9 @@ async def on_callback_query(event: MessageCallback):
             pass
 
         try:
-            chat_target = int(question.group_chat_id) if question.group_chat_id.isdigit() else question.group_chat_id
+            chat_target = int(question.group_chat_id) if str(question.group_chat_id).isdigit() else question.group_chat_id
             celeb_text = (
-                f"Вопрос #{question.id} успешно решён!\n"
+                f"🎉 Вопрос #{question.id} успешно решён!\n\n"
                 f"Помог(ла): {answer.author_name} (+50 XP, +1 спасибка)\n"
                 f"Автор {question.author_name} поблагодарил(а) за помощь."
             )
