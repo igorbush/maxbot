@@ -2,12 +2,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models import (
     Achievement,
     Answer,
     AuditLog,
+    Chat,
+    ChatMember,
     Question,
     Reward,
     RewardClaim,
@@ -31,6 +33,11 @@ class AchievementItem(BaseModel):
     unlocked: bool = False
     awarded_at: Optional[datetime] = None
 
+class ChatItem(BaseModel):
+    id: str
+    title: str
+    role: str = "student"
+
 class UserProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -44,6 +51,7 @@ class UserProfileResponse(BaseModel):
     helped_count: int = 0
     questions_count: int = 0
     rank_position: int = 1
+    chats: List[ChatItem] = []
     achievements: List[AchievementItem] = []
 
 class LeaderboardEntry(BaseModel):
@@ -62,6 +70,7 @@ class RewardItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_by_teacher_id: str
+    chat_id: Optional[str] = None
     title: str
     description: str
     cost_spasibki: int
@@ -71,6 +80,7 @@ class ClaimRewardRequest(BaseModel):
     reward_id: int
     student_max_id: Optional[str] = None
     user_id: Optional[str] = None
+    chat_id: Optional[str] = None
 
 class ClaimRewardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -79,19 +89,6 @@ class ClaimRewardResponse(BaseModel):
     student_max_id: str
     status: str
     created_at: datetime
-
-class AdjustBalanceRequest(BaseModel):
-    user_id: Optional[str] = None
-    student_max_id: Optional[str] = None
-    amount: Optional[int] = None
-    delta_spasibki: Optional[int] = None
-    delta_xp: Optional[int] = 0
-    reason: str = "Корректировка учителем"
-
-class OverrideAnswerRequest(BaseModel):
-    answer_id: int
-    status: str
-    reason: str = "Решение учителя"
 
 class ReviewClaimRequest(BaseModel):
     claim_id: int
@@ -102,6 +99,7 @@ class CreateRewardRequest(BaseModel):
     title: str
     description: str
     cost_spasibki: int
+    chat_id: Optional[str] = None
 
 class AwardBadgeRequest(BaseModel):
     student_id: str
@@ -110,10 +108,7 @@ class AwardBadgeRequest(BaseModel):
 class TeacherOverviewResponse(BaseModel):
     pending_claims: List[Dict[str, Any]]
     active_questions: List[Dict[str, Any]]
-    disputed_answers: List[Dict[str, Any]]
     total_students: int
-    statistics: Dict[str, int]
-    recent_audit_logs: List[Dict[str, Any]]
 
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
@@ -165,6 +160,23 @@ async def get_profile(
             rank_pos = idx
             break
 
+    memberships_res = await session.execute(
+        select(Chat, ChatMember.role)
+        .join(ChatMember, Chat.max_chat_id == ChatMember.chat_max_id)
+        .where(ChatMember.user_max_id == current_user.max_user_id)
+    )
+    user_chats = [
+        ChatItem(id=c.max_chat_id, title=c.title, role=r)
+        for c, r in memberships_res.all()
+    ]
+
+    if not user_chats:
+        all_chats_res = await session.execute(select(Chat))
+        user_chats = [
+            ChatItem(id=c.max_chat_id, title=c.title, role=current_user.role)
+            for c in all_chats_res.scalars().all()
+        ]
+
     level = (current_user.xp // 100) + 1
     return UserProfileResponse(
         id=current_user.id,
@@ -178,8 +190,27 @@ async def get_profile(
         helped_count=helped_count,
         questions_count=questions_count,
         rank_position=rank_pos,
+        chats=user_chats,
         achievements=achievements_data,
     )
+
+@router.get("/chats", response_model=List[ChatItem])
+async def get_chats(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    res = await session.execute(select(Chat).order_by(Chat.title.asc()))
+    chats = res.scalars().all()
+
+    mem_res = await session.execute(
+        select(ChatMember).where(ChatMember.user_max_id == current_user.max_user_id)
+    )
+    roles = {m.chat_max_id: m.role for m in mem_res.scalars().all()}
+
+    return [
+        ChatItem(id=c.max_chat_id, title=c.title, role=roles.get(c.max_chat_id, current_user.role))
+        for c in chats
+    ]
 
 @router.get("/achievements", response_model=List[AchievementItem])
 async def get_achievements(
@@ -210,6 +241,7 @@ async def get_achievements(
 @router.get("/leaderboard", response_model=LeaderboardResponse)
 async def get_leaderboard(
     period: str = Query("all_time"),
+    chat_id: Optional[str] = Query(None),
     limit: int = Query(50),
     offset: int = Query(0),
     session: AsyncSession = Depends(get_db_session),
@@ -227,7 +259,12 @@ async def get_leaderboard(
             )
             .join(Answer, Answer.author_max_id == User.max_user_id)
             .where(User.role == "student", Answer.status == "accepted", Answer.created_at >= since_dt)
-            .group_by(User.id)
+        )
+        if chat_id and chat_id != "all":
+            weekly_query = weekly_query.join(ChatMember, ChatMember.user_max_id == User.max_user_id).where(ChatMember.chat_max_id == chat_id)
+
+        weekly_query = (
+            weekly_query.group_by(User.id)
             .order_by(func.count(Answer.id).desc(), User.xp.desc())
             .offset(offset)
             .limit(limit)
@@ -248,13 +285,11 @@ async def get_leaderboard(
             ]
             return LeaderboardResponse(period=period, items=items)
 
-    all_time_query = (
-        select(User)
-        .where(User.role == "student")
-        .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
-        .offset(offset)
-        .limit(limit)
-    )
+    all_time_query = select(User).where(User.role == "student")
+    if chat_id and chat_id != "all":
+        all_time_query = all_time_query.join(ChatMember, ChatMember.user_max_id == User.max_user_id).where(ChatMember.chat_max_id == chat_id)
+
+    all_time_query = all_time_query.order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc()).offset(offset).limit(limit)
     res = await session.execute(all_time_query)
     students = res.scalars().all()
     items = [
@@ -272,11 +307,14 @@ async def get_leaderboard(
 
 @router.get("/rewards", response_model=List[RewardItem])
 async def get_rewards(
+    chat_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session),
 ):
-    res = await session.execute(
-        select(Reward).where(Reward.is_active == True).order_by(Reward.cost_spasibki.asc())
-    )
+    query = select(Reward).where(Reward.is_active == True)
+    if chat_id and chat_id != "all":
+        query = query.where(or_(Reward.chat_id == chat_id, Reward.chat_id.is_(None)))
+    query = query.order_by(Reward.cost_spasibki.asc())
+    res = await session.execute(query)
     return res.scalars().all()
 
 @router.post("/rewards/claim", response_model=ClaimRewardResponse)
@@ -292,6 +330,7 @@ async def claim_reward(
             session=session,
             student_max_id=student_id,
             reward_id=body.reward_id,
+            chat_id=body.chat_id,
         )
         return claim
     except ValueError as e:
@@ -317,6 +356,7 @@ async def get_my_claims(
             "reward_id": reward.id,
             "title": reward.title,
             "cost_spasibki": reward.cost_spasibki,
+            "chat_id": claim.chat_id,
             "status": claim.status,
             "created_at": claim.created_at.isoformat() if claim.created_at else None,
         }
@@ -325,114 +365,20 @@ async def get_my_claims(
 
 @router.get("/teacher/overview", response_model=TeacherOverviewResponse)
 async def get_teacher_overview(
+    chat_id: Optional[str] = Query(None),
     current_teacher: User = Depends(require_teacher),
     session: AsyncSession = Depends(get_db_session),
 ):
     overview = await TeacherService.get_teacher_overview(
         session=session,
         teacher_max_id=current_teacher.max_user_id,
+        chat_id=chat_id if chat_id != "all" else None,
     )
-
-    audit_res = await session.execute(
-        select(AuditLog).order_by(AuditLog.created_at.desc()).limit(20)
-    )
-    recent_audits = [
-        {
-            "id": a.id,
-            "actor_max_id": a.actor_max_id,
-            "target_user_max_id": a.target_user_max_id,
-            "target_type": a.target_type,
-            "target_id": a.target_id,
-            "action": a.action,
-            "details": a.details,
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-        }
-        for a in audit_res.scalars().all()
-    ]
-
-    total_q_res = await session.execute(select(func.count(Question.id)))
-    total_q = total_q_res.scalar_one() or 0
-
-    resolved_q_res = await session.execute(
-        select(func.count(Question.id)).where(Question.status == "resolved")
-    )
-    resolved_q = resolved_q_res.scalar_one() or 0
-
-    stats = {
-        "total_questions": total_q,
-        "resolved_questions": resolved_q,
-        "open_questions": len(overview.get("active_questions", [])),
-        "pending_claims": len(overview.get("pending_claims", [])),
-        "total_students": overview.get("total_students", 0),
-    }
-
     return TeacherOverviewResponse(
         pending_claims=overview.get("pending_claims", []),
         active_questions=overview.get("active_questions", []),
-        disputed_answers=overview.get("disputed_answers", []),
         total_students=overview.get("total_students", 0),
-        statistics=stats,
-        recent_audit_logs=recent_audits,
     )
-
-@router.post("/teacher/adjust-balance")
-async def adjust_student_balance(
-    body: AdjustBalanceRequest,
-    current_teacher: User = Depends(require_teacher),
-    session: AsyncSession = Depends(get_db_session),
-):
-    target_uid = body.user_id or body.student_max_id
-    if not target_uid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user_id")
-    delta_spasibki = body.delta_spasibki if body.delta_spasibki is not None else (body.amount if body.amount is not None else 0)
-    delta_xp = body.delta_xp if body.delta_xp is not None else 0
-    try:
-        user = await TeacherService.adjust_student_balance(
-            session=session,
-            teacher_max_id=current_teacher.max_user_id,
-            student_max_id=target_uid,
-            delta_spasibki=delta_spasibki,
-            delta_xp=delta_xp,
-            reason=body.reason,
-        )
-        return {
-            "status": "ok",
-            "user_id": user.max_user_id,
-            "balance_spasibki": user.balance_spasibki,
-            "xp": user.xp,
-            "rank": user.rank,
-        }
-    except ValueError as e:
-        msg = str(e)
-        if "not found" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
-
-@router.post("/teacher/override-answer")
-async def override_answer_status(
-    body: OverrideAnswerRequest,
-    current_teacher: User = Depends(require_teacher),
-    session: AsyncSession = Depends(get_db_session),
-):
-    try:
-        ans = await TeacherService.override_answer_status(
-            session=session,
-            teacher_max_id=current_teacher.max_user_id,
-            answer_id=body.answer_id,
-            new_status=body.status,
-            reason=body.reason,
-        )
-        return {
-            "status": "ok",
-            "answer_id": ans.id,
-            "new_status": ans.status,
-            "question_id": ans.question_id,
-        }
-    except ValueError as e:
-        msg = str(e)
-        if "not found" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
 @router.post("/teacher/review-claim")
 async def review_reward_claim(
@@ -474,6 +420,7 @@ async def create_reward(
             title=body.title,
             description=body.description,
             cost_spasibki=body.cost_spasibki,
+            chat_id=body.chat_id if body.chat_id != "all" else None,
         )
         return reward
     except ValueError as e:
@@ -503,11 +450,14 @@ async def award_teacher_badge(
 
 @router.get("/students")
 async def list_students(
+    chat_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session),
 ):
-    res = await session.execute(
-        select(User).where(User.role == "student").order_by(User.display_name.asc())
-    )
+    query = select(User).where(User.role == "student")
+    if chat_id and chat_id != "all":
+        query = query.join(ChatMember, ChatMember.user_max_id == User.max_user_id).where(ChatMember.chat_max_id == chat_id)
+    query = query.order_by(User.display_name.asc())
+    res = await session.execute(query)
     students = res.scalars().all()
     return [
         {
@@ -519,4 +469,3 @@ async def list_students(
         }
         for s in students
     ]
-

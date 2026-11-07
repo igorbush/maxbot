@@ -16,6 +16,27 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship,
 class Base(DeclarativeBase):
     pass
 
+class Chat(Base):
+    __tablename__ = "chats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    max_chat_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+
+class ChatMember(Base):
+    __tablename__ = "chat_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_max_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    user_max_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), default="student", server_default="student", nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("chat_max_id", "user_max_id", name="uq_chat_members_chat_user"),
+    )
+
 class User(Base):
     __tablename__ = "users"
 
@@ -39,8 +60,10 @@ class Question(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_chat_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    group_chat_title: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     group_message_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     author_max_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    author_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     subject: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open", server_default="open", nullable=False)
@@ -65,6 +88,7 @@ class Answer(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     question_id: Mapped[int] = mapped_column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), index=True, nullable=False)
     author_max_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    author_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     group_message_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     dm_approval_message_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -85,6 +109,7 @@ class Reward(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_by_teacher_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    chat_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     cost_spasibki: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -104,6 +129,7 @@ class RewardClaim(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     reward_id: Mapped[int] = mapped_column(Integer, ForeignKey("rewards.id", ondelete="RESTRICT"), index=True, nullable=False)
     student_max_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    chat_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="requested", server_default="requested", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
 
@@ -176,4 +202,3 @@ DEFAULT_ACHIEVEMENTS = [
     {"code": "week_leader", "name_ru": "Лидер недели", "description_ru": "1-е место в недельном рейтинге класса", "icon_url": "🏆"},
     {"code": "teacher_choice", "name_ru": "Выбор учителя", "description_ru": "Специальная награда от педагога", "icon_url": "⭐️"},
 ]
-

@@ -62,8 +62,38 @@ def build_verification_keyboard(answer_id: Union[int, str]) -> list[dict[str, An
     return format_inline_keyboard(
         [
             [
-                build_callback_button("✅ Помог", payload=f"verify_help:{answer_id}:yes"),
+                build_callback_button("✅ Помог (+50 XP, +1 🪙)", payload=f"verify_help:{answer_id}:yes"),
                 build_callback_button("❌ Не помог", payload=f"verify_help:{answer_id}:no"),
+            ]
+        ]
+    )
+
+def build_main_menu_keyboard(webapp_url: str, is_teacher: bool = False) -> list[dict[str, Any]]:
+    rows = [
+        [
+            build_callback_button("❓ Как спросить?", payload="menu:ask_info"),
+            build_callback_button("👤 Мой профиль", payload="menu:profile"),
+        ],
+        [
+            build_callback_button("🏆 Рейтинг класса", payload="menu:top"),
+            build_callback_button("🎁 Лавка наград", payload="menu:shop"),
+        ],
+        [
+            build_link_button("📱 Открыть Лигу Помощников", url=webapp_url),
+        ],
+    ]
+    if is_teacher:
+        rows.append([
+            build_callback_button("🎓 Кабинет учителя", payload="menu:teacher"),
+        ])
+    return format_inline_keyboard(rows)
+
+def build_question_keyboard(webapp_url: str) -> list[dict[str, Any]]:
+    return format_inline_keyboard(
+        [
+            [
+                build_callback_button("💡 Как ответить?", payload="menu:how_to_answer"),
+                build_link_button("📱 Открыть Лигу", url=webapp_url),
             ]
         ]
     )
@@ -72,7 +102,7 @@ def build_teacher_menu_keyboard(webapp_url: str) -> list[dict[str, Any]]:
     return format_inline_keyboard(
         [
             [
-                build_link_button("Панель учителя (Webapp)", url=webapp_url)
+                build_link_button("Панель учителя (Webapp)", url=webapp_url),
             ]
         ]
     )
@@ -199,6 +229,12 @@ class MaxBotClient:
     async def get_me(self) -> dict[str, Any]:
         return await self._send_request(method="GET", path="/me")
 
+    async def get_chat(self, chat_id: Union[int, str]) -> dict[str, Any]:
+        return await self._send_request(method="GET", path=f"/chats/{chat_id}")
+
+    async def get_chat_admins(self, chat_id: Union[int, str]) -> dict[str, Any]:
+        return await self._send_request(method="GET", path=f"/chats/{chat_id}/members/admins")
+
     async def send_message(
         self,
         chat_id: Optional[Union[int, str]] = None,
@@ -242,6 +278,25 @@ class MaxBotClient:
             method="POST",
             path="/messages",
             params=params,
+            json_data=body,
+        )
+
+    async def edit_message(
+        self,
+        message_id: str,
+        text: str,
+        attachments: Optional[list[dict[str, Any]]] = None,
+        format: str = "markdown",
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "text": text,
+            "format": format,
+        }
+        if attachments is not None:
+            body["attachments"] = attachments
+        return await self._send_request(
+            method="PUT",
+            path=f"/messages/{message_id}",
             json_data=body,
         )
 
@@ -356,4 +411,3 @@ def get_bot_client(
     if _default_bot_client is None:
         _default_bot_client = MaxBotClient()
     return _default_bot_client
-

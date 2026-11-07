@@ -3,203 +3,288 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Лига Помощников | MAX</title>
+  <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <div id="demo-bar" class="demo-bar">
-    <span class="demo-label">Тестовый профиль:</span>
-    <select id="demo-user-select" onchange="switchDemoUser(this.value)">
-      <option value="1001">Аркадий (Ученик, 480 XP)</option>
-      <option value="1002">Маша (Ученица, 290 XP)</option>
-      <option value="1003">Иван (Новичок, 110 XP)</option>
-      <option value="9999">Мария Ивановна (Учитель 🎓)</option>
-    </select>
+    <div class="demo-content">
+      <span class="demo-label">Демо-режим:</span>
+      <select id="demo-user-select" onchange="switchDemoUser(this.value)">
+        <option value="1001">Аркадий Петров (7Б Класс, 480 XP)</option>
+        <option value="1002">Мария Смирнова (7Б Класс, 290 XP)</option>
+        <option value="1003">Иван Васильев (7Б Класс, 110 XP)</option>
+        <option value="1004">Дарья Ковалёва (8А Класс, 340 XP)</option>
+        <option value="1005">Артём Морозов (8А Класс, 190 XP)</option>
+        <option value="9999">Мария Ивановна Смирнова (Учитель 🎓)</option>
+      </select>
+    </div>
   </div>
 
   <header class="app-header">
-    <div class="user-info-row">
-      <div class="user-avatar" id="header-avatar">🎒</div>
-      <div class="user-details">
-        <h2 id="header-name">Загрузка...</h2>
-        <span class="badge" id="header-role">Ученик</span>
+    <div class="header-main">
+      <div class="header-left">
+        <div class="header-avatar" id="header-avatar">АП</div>
+        <div class="header-user-info">
+          <div class="header-name-row">
+            <h1 class="header-name" id="header-name">Загрузка...</h1>
+            <span class="role-badge" id="header-role">Ученик</span>
+          </div>
+          <button class="class-picker-btn" id="class-picker-trigger" onclick="openClassModal()">
+            <span class="class-icon">🏫</span>
+            <span id="current-class-label">7Б Класс</span>
+            <span class="picker-arrow">▾</span>
+          </button>
+        </div>
       </div>
-      <div class="coins-pill">
-        <span class="coin-icon">🪙</span>
-        <span id="header-coins">0</span>
-        <span class="coins-text">спасибок</span>
+
+      <div class="header-right">
+        <div class="coins-chip">
+          <span class="coin-symbol">🪙</span>
+          <span class="coins-amount" id="header-coins">0</span>
+        </div>
       </div>
     </div>
   </header>
 
-  <main class="content-container">
+  <main class="main-content">
 
     <section id="tab-profile" class="tab-pane active">
-      <div class="card level-card">
-        <div class="level-header">
-          <div>
-            <span class="sub-label">Текущее звание</span>
-            <h3 id="profile-level-title" class="title-highlight">Новичок</h3>
+      <div class="sferum-hero-card">
+        <div class="hero-top">
+          <div class="hero-rank-info">
+            <span class="hero-sub">Звание в Лиге</span>
+            <h2 class="hero-rank" id="profile-level-title">Знаток</h2>
           </div>
-          <div class="level-badge" id="profile-level-num">1 ур.</div>
+          <div class="hero-level-chip" id="profile-level-num">1 уровень</div>
         </div>
 
-        <div class="progress-box">
+        <div class="hero-progress-section">
           <div class="progress-labels">
-            <span>Прогресс звания</span>
+            <span>Прогресс до след. звания</span>
             <span id="profile-xp-text">0 / 100 XP</span>
           </div>
-          <div class="progress-bar-bg">
-            <div id="profile-xp-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          <div class="sferum-progress-track">
+            <div id="profile-xp-fill" class="sferum-progress-fill" style="width: 0%;"></div>
           </div>
         </div>
       </div>
 
-      <div class="stats-grid">
-        <div class="card stat-card">
-          <span class="stat-icon">🤝</span>
-          <span class="stat-val" id="profile-helped">0</span>
-          <span class="stat-title">Помог классу</span>
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-icon-wrap icon-blue">🤝</div>
+          <div class="stat-number" id="profile-helped">0</div>
+          <div class="stat-caption">Помог в классе</div>
         </div>
-        <div class="card stat-card">
-          <span class="stat-icon">❓</span>
-          <span class="stat-val" id="profile-questions">0</span>
-          <span class="stat-title">Задал вопросов</span>
+        <div class="stat-box">
+          <div class="stat-icon-wrap icon-purple">❓</div>
+          <div class="stat-number" id="profile-questions">0</div>
+          <div class="stat-caption">Задал вопросов</div>
         </div>
-        <div class="card stat-card">
-          <span class="stat-icon">🏆</span>
-          <span class="stat-val" id="profile-rank"># 1</span>
-          <span class="stat-title">Место в топе</span>
+        <div class="stat-box">
+          <div class="stat-icon-wrap icon-gold">🏆</div>
+          <div class="stat-number" id="profile-rank">#1</div>
+          <div class="stat-caption">Место в рейтинге</div>
         </div>
       </div>
 
-      <div class="card info-card">
-        <h4>Как прокачать звание?</h4>
-        <p>Отвечайте на вопросы одноклассников в чате по команде <code>/ask</code>. За полезное объяснение вы получите <b>+50 XP</b> и <b>+1 спасибку</b>!</p>
+      <div class="sferum-card info-banner">
+        <div class="info-banner-header">
+          <span class="info-icon">💡</span>
+          <h3>Как работает взаимопомощь?</h3>
+        </div>
+        <p>Задавайте вопросы в чате класса через <code>/ask</code>. Отвечайте на сообщения одноклассников реплаем. Когда автор отмечает ваш ответ кнопкой «Принять», вы получаете <b>+50 XP</b> и <b>+1 монетку-спасибку</b>!</p>
       </div>
     </section>
 
     <section id="tab-leaderboard" class="tab-pane">
-      <div class="section-heading">
-        <h3>Доска почёта класса</h3>
-        <p>Топ помощников, которые активнее всех выручают друзей</p>
+      <div class="page-title-box">
+        <h2 class="page-title">Рейтинг помощников</h2>
+        <p class="page-desc">Самые отзывчивые ученики, которые помогают одноклассникам</p>
       </div>
 
-      <div class="segmented-control">
-        <button class="seg-btn active" id="btn-period-all" onclick="changeLeaderboardPeriod('all_time')">Все время</button>
-        <button class="seg-btn" id="btn-period-week" onclick="changeLeaderboardPeriod('weekly')">За неделю</button>
+      <div class="segmented-wrapper">
+        <div class="segmented-control scope-selector">
+          <button class="seg-btn active" id="scope-class-btn" onclick="setLeaderboardScope('class')">В моём классе</button>
+          <button class="seg-btn" id="scope-school-btn" onclick="setLeaderboardScope('school')">По всей школе</button>
+        </div>
+
+        <div class="segmented-control period-selector">
+          <button class="seg-btn active" id="btn-period-all" onclick="changeLeaderboardPeriod('all_time')">За всё время</button>
+          <button class="seg-btn" id="btn-period-week" onclick="changeLeaderboardPeriod('weekly')">За неделю</button>
+        </div>
       </div>
 
-      <div class="leaderboard-list" id="leaderboard-container">
-        <div class="loading-spinner">Загрузка рейтинга...</div>
+      <div class="leaderboard-cards" id="leaderboard-container">
+        <div class="state-loading">Загрузка рейтинга...</div>
       </div>
     </section>
 
     <section id="tab-achievements" class="tab-pane">
-      <div class="section-heading">
-        <h3>Коллекция наград</h3>
-        <p>Выполняйте учебные челленджи и открывайте бейджи</p>
+      <div class="page-title-box">
+        <h2 class="page-title">Достижения</h2>
+        <p class="page-desc">Учебные награды за активную помощь и решение сложных задач</p>
       </div>
 
       <div class="achievements-grid" id="achievements-container">
-        <div class="loading-spinner">Загрузка достижений...</div>
+        <div class="state-loading">Загрузка наград...</div>
       </div>
     </section>
 
     <section id="tab-rewards" class="tab-pane">
-      <div class="section-heading">
-        <h3>Школьная лавка наград</h3>
-        <p>Обменивайте заработанные спасибки на реальные бонусы от учителя</p>
+      <div class="page-title-box">
+        <h2 class="page-title">Школьная лавка</h2>
+        <p class="page-desc">Обменивайте спасибки на бонусы и привилегии от учителей</p>
       </div>
 
-      <div class="rewards-balance-bar">
-        <span>Ваш баланс: <strong id="shop-coins">0</strong> 🪙 спасибок</span>
+      <div class="balance-banner">
+        <div class="balance-info">
+          <span class="balance-label">Доступно к обмену</span>
+          <span class="balance-val"><strong id="shop-coins">0</strong> <span class="coin-unit">🪙 спасибок</span></span>
+        </div>
       </div>
 
+      <div class="rewards-section-title">Каталог наград</div>
       <div class="rewards-grid" id="rewards-container">
-        <div class="loading-spinner">Загрузка витрины...</div>
+        <div class="state-loading">Загрузка витрины...</div>
       </div>
 
-      <div class="my-requests-section">
-        <h4>Мои запросы на награды</h4>
-        <div id="my-requests-list" class="requests-list">
-          <p class="empty-hint">У вас пока нет активных запросов.</p>
+      <div class="my-claims-card">
+        <h3 class="claims-heading">Мои полученные награды</h3>
+        <div id="my-requests-list" class="claims-list">
+          <p class="empty-state-text">У вас пока нет активных запросов на награды.</p>
         </div>
       </div>
     </section>
 
     <section id="tab-teacher" class="tab-pane">
-      <div class="section-heading">
-        <h3>Кабинет учителя</h3>
-        <p>Управление школьными наградами и одобрение заявок учеников</p>
+      <div class="page-title-box">
+        <h2 class="page-title">Кабинет учителя</h2>
+        <p class="page-desc">Управление наградами и проверка заявок учеников</p>
       </div>
 
-      <div class="card teacher-card">
-        <h4>Входящие заявки на награды</h4>
-        <div id="teacher-requests-list" class="teacher-requests-list">
-          <div class="loading-spinner">Загрузка заявок...</div>
+      <div class="teacher-class-bar">
+        <span class="bar-caption">Выбранный класс:</span>
+        <select id="teacher-class-select" class="teacher-select" onchange="onTeacherClassChange(this.value)">
+          <option value="all">Все классы</option>
+        </select>
+      </div>
+
+      <div class="sferum-card">
+        <div class="card-header-row">
+          <h3>Входящие заявки на награды</h3>
+          <span class="count-pill" id="pending-claims-count">0</span>
+        </div>
+        <div id="teacher-requests-list" class="teacher-claims-list">
+          <div class="state-loading">Загрузка заявок...</div>
         </div>
       </div>
 
-      <div class="card teacher-card">
-        <h4>Добавить новую награду в лавку</h4>
-        <form id="create-reward-form" onsubmit="handleCreateReward(event)">
-          <div class="form-group">
-            <label>Название награды:</label>
-            <input type="text" id="rew-title" placeholder="Например: Освобождение от одного ДЗ" required>
-          </div>
-          <div class="form-group">
-            <label>Описание:</label>
-            <textarea id="rew-desc" rows="2" placeholder="Условия получения и применения награды" required></textarea>
-          </div>
-          <div class="form-row">
-            <div class="form-group flex-1">
-              <label>Стоимость в спасибках 🪙:</label>
-              <input type="number" id="rew-price" value="30" min="1" max="500" required>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary full-width">Опубликовать награду</button>
-        </form>
-      </div>
-
-      <div class="card teacher-card">
-        <h4>Вручить награду «Выбор учителя»</h4>
-        <p class="form-hint">Наградите ученика за понятное объяснение (+100 XP и +20 спасибок)!</p>
-        <div class="form-row">
-          <select id="teacher-award-student" class="flex-1">
+      <div class="sferum-card">
+        <h3>Вручить «Выбор учителя»</h3>
+        <p class="card-subtext">Отметьте ученика за самое понятное и доброжелательное объяснение (+100 XP и +20 спасибок).</p>
+        <div class="award-form-row">
+          <select id="teacher-award-student" class="sferum-input flex-1">
             <option value="">Выберите ученика...</option>
           </select>
-          <button type="button" class="btn btn-gold" onclick="handleAwardTeacherBadge()">Вручить</button>
+          <button type="button" class="sferum-btn btn-gold" onclick="handleAwardTeacherBadge()">Вручить</button>
         </div>
+      </div>
+
+      <div class="sferum-card">
+        <h3>Добавить новую награду</h3>
+        <p class="card-subtext">Создайте награду для выбранного класса или для всей школы.</p>
+        <form id="create-reward-form" onsubmit="handleCreateReward(event)">
+          <div class="form-field">
+            <label class="field-label">Название награды</label>
+            <input type="text" id="rew-title" class="sferum-input" placeholder="Например: Минус одно домашнее задание" required>
+          </div>
+          <div class="form-field">
+            <label class="field-label">Описание</label>
+            <input type="text" id="rew-desc" class="sferum-input" placeholder="Условия и порядок применения" required>
+          </div>
+          <div class="form-row-compact">
+            <div class="form-field flex-1">
+              <label class="field-label">Стоимость (спасибки)</label>
+              <input type="number" id="rew-price" class="sferum-input" value="30" min="1" max="500" required>
+            </div>
+            <div class="form-field flex-1">
+              <label class="field-label">Для какого класса</label>
+              <select id="rew-chat-select" class="sferum-input">
+                <option value="all">Для всей школы</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="sferum-btn btn-primary full-width">Опубликовать награду</button>
+        </form>
       </div>
     </section>
 
   </main>
 
-  <nav class="bottom-nav">
-    <button class="nav-item active" onclick="switchTab('profile', this)">
-      <span class="nav-icon">👤</span>
-      <span class="nav-text">Профиль</span>
+  <nav class="bottom-tabbar">
+    <button class="tab-item active" onclick="switchTab('profile', this)">
+      <div class="tab-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+      </div>
+      <span class="tab-text">Профиль</span>
     </button>
-    <button class="nav-item" onclick="switchTab('leaderboard', this)">
-      <span class="nav-icon">🏆</span>
-      <span class="nav-text">Рейтинг</span>
+    <button class="tab-item" onclick="switchTab('leaderboard', this)">
+      <div class="tab-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+      </div>
+      <span class="tab-text">Рейтинг</span>
     </button>
-    <button class="nav-item" onclick="switchTab('achievements', this)">
-      <span class="nav-icon">🎖</span>
-      <span class="nav-text">Ачивки</span>
+    <button class="tab-item" onclick="switchTab('achievements', this)">
+      <div class="tab-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="7"></circle>
+          <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline>
+        </svg>
+      </div>
+      <span class="tab-text">Ачивки</span>
     </button>
-    <button class="nav-item" onclick="switchTab('rewards', this)">
-      <span class="nav-icon">🎁</span>
-      <span class="nav-text">Лавка</span>
+    <button class="tab-item" onclick="switchTab('rewards', this)">
+      <div class="tab-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 12 20 22 4 22 4 12"></polyline>
+          <rect x="2" y="7" width="20" height="5"></rect>
+          <line x1="12" y1="22" x2="12" y2="7"></line>
+          <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path>
+          <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path>
+        </svg>
+      </div>
+      <span class="tab-text">Лавка</span>
     </button>
-    <button class="nav-item" id="nav-teacher-btn" onclick="switchTab('teacher', this)">
-      <span class="nav-icon">🎓</span>
-      <span class="nav-text">Учитель</span>
+    <button class="tab-item" id="nav-teacher-btn" onclick="switchTab('teacher', this)">
+      <div class="tab-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
+          <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
+        </svg>
+      </div>
+      <span class="tab-text">Учитель</span>
     </button>
   </nav>
+
+  <div id="class-modal" class="modal-backdrop hidden" onclick="closeClassModal(event)">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">Выберите класс</h3>
+        <button class="sheet-close" onclick="closeClassModal()">✕</button>
+      </div>
+      <div class="sheet-classes-list" id="sheet-classes-list">
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
 
