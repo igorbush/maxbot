@@ -1,14 +1,17 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, select, delete, or_
 from app.config import get_settings
 from app.database.models import (
     Achievement,
+    Answer,
     Chat,
     ChatMember,
     Question,
     Reward,
+    RewardClaim,
     User,
+    UserAchievement,
     DEFAULT_ACHIEVEMENTS,
 )
 
@@ -126,6 +129,27 @@ async def init_db():
         if rew_res.scalar_one_or_none() is None:
             for r in READY_REWARDS:
                 session.add(Reward(**r))
+
+        dummy_user_ids = ["1001", "1002", "1003", "1004", "1005", "9999", "teacher_1", "student_demo", "test_user"]
+        await session.execute(delete(ChatMember).where(ChatMember.user_max_id.in_(dummy_user_ids)))
+        await session.execute(delete(User).where(User.max_user_id.in_(dummy_user_ids)))
+        await session.execute(delete(Question).where(Question.author_max_id.in_(dummy_user_ids)))
+        await session.execute(delete(Answer).where(Answer.author_max_id.in_(dummy_user_ids)))
+        await session.execute(delete(UserAchievement).where(UserAchievement.user_max_id.in_(dummy_user_ids)))
+        await session.execute(delete(RewardClaim).where(RewardClaim.student_max_id.in_(dummy_user_ids)))
+        await session.execute(delete(Chat).where(Chat.max_chat_id.in_(["chat_7b", "chat_8a"])))
+
+        dialog_subq = select(Chat.max_chat_id).where(
+            or_(
+                Chat.title == "Диалог",
+                Chat.title.ilike("%диалог%"),
+                Chat.max_chat_id.in_(select(User.max_user_id)),
+            )
+        )
+        bad_chat_ids = (await session.execute(dialog_subq)).scalars().all()
+        if bad_chat_ids:
+            await session.execute(delete(ChatMember).where(ChatMember.chat_max_id.in_(bad_chat_ids)))
+            await session.execute(delete(Chat).where(Chat.max_chat_id.in_(bad_chat_ids)))
 
         await session.commit()
 

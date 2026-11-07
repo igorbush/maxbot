@@ -11,7 +11,14 @@ async def get_current_user(
     display_name: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session),
 ) -> User:
-    uid = str(x_user_id or user_id or "1001").strip()
+    uid = str(x_user_id or user_id or "").strip()
+    if not uid:
+        first_res = await session.execute(select(User).order_by(User.id.asc()).limit(1))
+        first_user = first_res.scalar_one_or_none()
+        if first_user:
+            return first_user
+        uid = "user_1"
+
     res = await session.execute(select(User).where(User.max_user_id == uid))
     user = res.scalar_one_or_none()
 

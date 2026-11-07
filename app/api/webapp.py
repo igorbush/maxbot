@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models import (
     Achievement,
@@ -118,9 +118,19 @@ class TeacherOverviewResponse(BaseModel):
 
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
+    chat_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    bad_chats_q = select(Chat.max_chat_id).where(
+        or_(Chat.title == "Диалог", Chat.title.ilike("%диалог%"))
+    )
+    bad_ids = (await session.execute(bad_chats_q)).scalars().all()
+    if bad_ids:
+        await session.execute(delete(ChatMember).where(ChatMember.chat_max_id.in_(bad_ids)))
+        await session.execute(delete(Chat).where(Chat.max_chat_id.in_(bad_ids)))
+        await session.commit()
+
     query = (
         select(Achievement, UserAchievement.awarded_at)
         .join(UserAchievement, Achievement.id == UserAchievement.achievement_id)
@@ -169,32 +179,60 @@ async def get_profile(
     memberships_res = await session.execute(
         select(Chat, ChatMember.role)
         .join(ChatMember, Chat.max_chat_id == ChatMember.chat_max_id)
-        .where(ChatMember.user_max_id == current_user.max_user_id)
+        .where(
+            ChatMember.user_max_id == current_user.max_user_id,
+            Chat.title != "Диалог",
+            not_(Chat.title.ilike("%диалог%")),
+        )
+        .order_by(Chat.title.asc())
     )
-    user_chats = [
-        ChatItem(id=c.max_chat_id, title=c.title, role=r)
+    user_chats_map = {
+        c.max_chat_id: ChatItem(id=c.max_chat_id, title=c.title, role=r)
         for c, r in memberships_res.all()
-    ]
+    }
 
-    if not user_chats:
-        all_chats_res = await session.execute(select(Chat))
-        chats_found = all_chats_res.scalars().all()
-        if chats_found:
-            user_chats = [
-                ChatItem(id=c.max_chat_id, title=c.title, role=current_user.role)
-                for c in chats_found
-            ]
+    owned_chats_res = await session.execute(
+        select(Chat).where(
+            Chat.owner_id == current_user.max_user_id,
+            Chat.title != "Диалог",
+            not_(Chat.title.ilike("%диалог%")),
+        )
+    )
+    for c in owned_chats_res.scalars().all():
+        if c.max_chat_id not in user_chats_map:
+            user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
         else:
-            user_chats = [
-                ChatItem(id="my_class", title="Мой учебный класс", role=current_user.role)
-            ]
+            user_chats_map[c.max_chat_id].role = "teacher"
+
+    if current_user.role in ("teacher", "admin"):
+        all_chats_res = await session.execute(
+            select(Chat).where(Chat.title != "Диалог", not_(Chat.title.ilike("%диалог%"))).order_by(Chat.title.asc())
+        )
+        for c in all_chats_res.scalars().all():
+            if c.max_chat_id not in user_chats_map:
+                user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
+
+    user_chats = list(user_chats_map.values())
+    if not user_chats:
+        user_chats = [
+            ChatItem(id="my_class", title="Мой учебный класс", role=current_user.role)
+        ]
+
+    current_role = current_user.role
+    if chat_id and chat_id != "all":
+        for uc in user_chats:
+            if uc.id == chat_id:
+                current_role = uc.role
+                break
+    elif user_chats:
+        current_role = user_chats[0].role
 
     level = (current_user.xp // 100) + 1
     return UserProfileResponse(
         id=current_user.id,
         max_user_id=current_user.max_user_id,
         display_name=current_user.display_name,
-        role=current_user.role,
+        role=current_role,
         balance_spasibki=current_user.balance_spasibki,
         xp=current_user.xp,
         rank=current_user.rank,
@@ -235,18 +273,55 @@ async def get_chats(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    res = await session.execute(select(Chat).order_by(Chat.title.asc()))
-    chats = res.scalars().all()
+    bad_chats_q = select(Chat.max_chat_id).where(
+        or_(Chat.title == "Диалог", Chat.title.ilike("%диалог%"))
+    )
+    bad_ids = (await session.execute(bad_chats_q)).scalars().all()
+    if bad_ids:
+        await session.execute(delete(ChatMember).where(ChatMember.chat_max_id.in_(bad_ids)))
+        await session.execute(delete(Chat).where(Chat.max_chat_id.in_(bad_ids)))
+        await session.commit()
 
     mem_res = await session.execute(
-        select(ChatMember).where(ChatMember.user_max_id == current_user.max_user_id)
+        select(Chat, ChatMember.role)
+        .join(ChatMember, Chat.max_chat_id == ChatMember.chat_max_id)
+        .where(
+            ChatMember.user_max_id == current_user.max_user_id,
+            Chat.title != "Диалог",
+            not_(Chat.title.ilike("%диалог%")),
+        )
+        .order_by(Chat.title.asc())
     )
-    roles = {m.chat_max_id: m.role for m in mem_res.scalars().all()}
+    user_chats_map = {
+        c.max_chat_id: ChatItem(id=c.max_chat_id, title=c.title, role=r)
+        for c, r in mem_res.all()
+    }
 
-    return [
-        ChatItem(id=c.max_chat_id, title=c.title, role=roles.get(c.max_chat_id, current_user.role))
-        for c in chats
-    ]
+    owned_chats_res = await session.execute(
+        select(Chat).where(
+            Chat.owner_id == current_user.max_user_id,
+            Chat.title != "Диалог",
+            not_(Chat.title.ilike("%диалог%")),
+        )
+    )
+    for c in owned_chats_res.scalars().all():
+        if c.max_chat_id not in user_chats_map:
+            user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
+        else:
+            user_chats_map[c.max_chat_id].role = "teacher"
+
+    if current_user.role in ("teacher", "admin"):
+        all_chats_res = await session.execute(
+            select(Chat).where(Chat.title != "Диалог", not_(Chat.title.ilike("%диалог%"))).order_by(Chat.title.asc())
+        )
+        for c in all_chats_res.scalars().all():
+            if c.max_chat_id not in user_chats_map:
+                user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
+
+    my_chats = list(user_chats_map.values())
+    if my_chats:
+        return my_chats
+    return [ChatItem(id="my_class", title="Мой учебный класс", role=current_user.role)]
 
 @router.get("/achievements", response_model=List[AchievementItem])
 async def get_achievements(

@@ -10,7 +10,7 @@ from maxapi.types import BotCommand
 
 from app.config import get_settings
 from app.database.session import init_db
-from app.services.bot_service import dp
+from app.services.bot_service import dp, sync_bot_chats
 from app.api.webapp import router as webapp_router
 
 settings = get_settings()
@@ -27,7 +27,6 @@ async def register_bot_commands(target_bot: Bot):
             BotCommand(name="help", description="Инструкция по взаимопомощи"),
             BotCommand(name="manage", description="Кабинет учителя"),
         ]
-        await target_bot.set_my_commands(*commands)
         await target_bot.set_commands(*commands)
         print("[БОТ] Команды бота (/ask, /start, /help, /manage) зарегистрированы в MAX API")
     except Exception as e:
@@ -39,6 +38,7 @@ async def lifespan(app: FastAPI):
     bot_task = None
     if bot and settings.MAX_BOT_TOKEN:
         await register_bot_commands(bot)
+        await sync_bot_chats(bot)
         print("[БОТ] Запуск опроса MAX API (библиотека maxapi)...")
         bot_task = asyncio.create_task(dp.start_polling(bot))
     yield

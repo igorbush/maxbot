@@ -1,8 +1,8 @@
 from typing import Optional
-from sqlmodel import select
+from sqlmodel import select, delete
 from maxapi import Bot, Dispatcher
 from maxapi.filters.command import Command, CommandStart
-from maxapi.types import MessageCreated, MessageCallback, BotStarted
+from maxapi.types import MessageCreated, MessageCallback, BotStarted, BotAdded
 from maxapi.types import CallbackButton
 from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
@@ -16,7 +16,7 @@ dp = Dispatcher()
 
 def extract_display_name(user) -> str:
     if not user:
-        return "Ученик"
+        return "Участник"
     first = getattr(user, "first_name", "") or ""
     last = getattr(user, "last_name", "") or ""
     full = f"{first} {last}".strip()
@@ -51,18 +51,26 @@ def build_approval_keyboard(answer_id: int):
     builder.adjust(2)
     return builder
 
-async def ensure_user_and_chat(session, user_id: str, display_name: str, chat_id: Optional[str] = None, chat_title: Optional[str] = None, owner_id: Optional[str] = None):
+async def ensure_user_and_chat(
+    session,
+    user_id: str,
+    display_name: str,
+    chat_id: Optional[str] = None,
+    chat_title: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    is_admin: bool = False,
+    is_group: bool = False,
+):
     res_user = await session.execute(select(User).where(User.max_user_id == user_id))
     user = res_user.scalar_one_or_none()
 
-    is_chat_creator = bool(owner_id and str(owner_id) == str(user_id))
-    initial_role = "teacher" if is_chat_creator else "student"
+    is_teacher = is_admin or bool(owner_id and str(owner_id) == str(user_id))
 
     if not user:
         user = User(
             max_user_id=user_id,
             display_name=display_name,
-            role=initial_role,
+            role="teacher" if is_teacher else "student",
             balance_spasibki=10,
             xp=100,
             rank="Любитель",
@@ -71,16 +79,16 @@ async def ensure_user_and_chat(session, user_id: str, display_name: str, chat_id
     else:
         if display_name and not display_name.startswith("Участник "):
             user.display_name = display_name
-        if is_chat_creator and user.role != "teacher":
+        if is_teacher and user.role != "teacher":
             user.role = "teacher"
 
-    if chat_id:
+    if is_group and chat_id and chat_title and chat_title.lower() != "диалог":
         res_chat = await session.execute(select(Chat).where(Chat.max_chat_id == chat_id))
         chat_row = res_chat.scalar_one_or_none()
         if not chat_row:
             chat_row = Chat(
                 max_chat_id=chat_id,
-                title=chat_title or "Учебный чат",
+                title=chat_title,
                 owner_id=owner_id,
             )
             session.add(chat_row)
@@ -90,6 +98,7 @@ async def ensure_user_and_chat(session, user_id: str, display_name: str, chat_id
             if owner_id and not chat_row.owner_id:
                 chat_row.owner_id = owner_id
 
+        member_role = "teacher" if is_teacher else "student"
         res_member = await session.execute(
             select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == user_id)
         )
@@ -98,12 +107,71 @@ async def ensure_user_and_chat(session, user_id: str, display_name: str, chat_id
             member_row = ChatMember(
                 chat_max_id=chat_id,
                 user_max_id=user_id,
-                role="teacher" if is_chat_creator else user.role,
+                role=member_role,
             )
             session.add(member_row)
+        else:
+            if is_teacher and member_row.role != "teacher":
+                member_row.role = "teacher"
 
     await session.commit()
     return user
+
+@dp.bot_added()
+async def on_bot_added(event: BotAdded):
+    chat_id = str(event.chat_id)
+    print(f"[БОТ] Бот добавлен в чат {chat_id}")
+
+    try:
+        chat_obj = await event.bot.get_chat_by_id(event.chat_id)
+        chat_title = chat_obj.title if chat_obj else f"Чат {chat_id}"
+        owner_id = str(chat_obj.owner_id) if chat_obj and chat_obj.owner_id else None
+
+        async with async_session_factory() as session:
+            res_chat = await session.execute(select(Chat).where(Chat.max_chat_id == chat_id))
+            chat_row = res_chat.scalar_one_or_none()
+            if not chat_row:
+                chat_row = Chat(max_chat_id=chat_id, title=chat_title, owner_id=owner_id)
+                session.add(chat_row)
+            else:
+                chat_row.title = chat_title
+                if owner_id:
+                    chat_row.owner_id = owner_id
+
+            if owner_id:
+                res_m = await session.execute(
+                    select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == owner_id)
+                )
+                if not res_m.scalar_one_or_none():
+                    session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher"))
+
+            try:
+                admin_res = await event.bot.get_list_admin_chat(event.chat_id)
+                if admin_res and hasattr(admin_res, "members") and admin_res.members:
+                    for adm in admin_res.members:
+                        adm_id = str(adm.user_id)
+                        adm_name = f"{adm.first_name or ''} {adm.last_name or ''}".strip() or adm.username or f"Учитель {adm_id}"
+                        u_res = await session.execute(select(User).where(User.max_user_id == adm_id))
+                        adm_u = u_res.scalar_one_or_none()
+                        if not adm_u:
+                            session.add(User(max_user_id=adm_id, display_name=adm_name, role="teacher", balance_spasibki=10, xp=100))
+                        else:
+                            adm_u.role = "teacher"
+
+                        res_adm_m = await session.execute(
+                            select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == adm_id)
+                        )
+                        adm_m = res_adm_m.scalar_one_or_none()
+                        if not adm_m:
+                            session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher"))
+                        else:
+                            adm_m.role = "teacher"
+            except Exception:
+                pass
+
+            await session.commit()
+    except Exception as e:
+        print(f"[БОТ] Ошибка регистрации чата: {e}")
 
 @dp.bot_started()
 async def on_bot_started(event: BotStarted):
@@ -112,7 +180,7 @@ async def on_bot_started(event: BotStarted):
     print(f"[БОТ] Бот запущен пользователем {user_name} (ID: {user_id})")
 
     async with async_session_factory() as session:
-        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name)
+        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, is_group=False)
 
     kb = build_main_menu_keyboard()
     text = (
@@ -133,13 +201,23 @@ async def on_start_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
     chat_id = str(event.chat.chat_id) if event.chat else ""
-    chat_title = getattr(event.chat, "title", None) or "Диалог"
+    chat_type = getattr(event.chat, "type", "") or ""
+    is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
+    chat_title = event.chat.title if is_group else None
     owner_id = str(event.chat.owner_id) if event.chat and getattr(event.chat, "owner_id", None) else None
 
-    print(f"[БОТ] Команда /start от {user_name} (ID: {user_id}) в '{chat_title}'")
+    print(f"[БОТ] Команда /start от {user_name} (ID: {user_id})")
 
     async with async_session_factory() as session:
-        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, chat_id=chat_id, chat_title=chat_title, owner_id=owner_id)
+        await ensure_user_and_chat(
+            session,
+            user_id=user_id,
+            display_name=user_name,
+            chat_id=chat_id if is_group else None,
+            chat_title=chat_title,
+            owner_id=owner_id,
+            is_group=is_group,
+        )
 
     kb = build_main_menu_keyboard()
     text = (
@@ -186,7 +264,7 @@ async def on_manage_command(event: MessageCreated):
     else:
         text = (
             f"Кабинет учителя\n\n"
-            f"Этот раздел предназначен для преподавателей и кураторов классов."
+            f"Этот раздел предназначен для преподавателей и кураторов учебных групп."
         )
 
     await event.message.answer(text=text, attachments=[kb.as_markup()])
@@ -196,7 +274,9 @@ async def on_ask_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
     chat_id = str(event.chat.chat_id) if event.chat else ""
-    chat_title = getattr(event.chat, "title", None) or "Класс"
+    chat_type = getattr(event.chat, "type", "") or ""
+    is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
+    chat_title = event.chat.title if is_group else "Учебный чат"
     owner_id = str(event.chat.owner_id) if event.chat and getattr(event.chat, "owner_id", None) else None
 
     raw_text = event.message.body.text if event.message and event.message.body else ""
@@ -212,7 +292,15 @@ async def on_ask_command(event: MessageCreated):
     mid = event.message.body.mid if event.message and event.message.body else f"msg_{user_id}"
 
     async with async_session_factory() as session:
-        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, chat_id=chat_id, chat_title=chat_title, owner_id=owner_id)
+        await ensure_user_and_chat(
+            session,
+            user_id=user_id,
+            display_name=user_name,
+            chat_id=chat_id if is_group else None,
+            chat_title=chat_title,
+            owner_id=owner_id,
+            is_group=is_group,
+        )
 
         q = Question(
             group_chat_id=chat_id,
@@ -239,10 +327,99 @@ async def on_ask_command(event: MessageCreated):
     )
     await event.message.answer(text=card_text, attachments=[kb.as_markup()])
 
+async def sync_bot_chats(target_bot: Bot):
+    try:
+        chats_data = await target_bot.get_chats(count=100)
+        if not chats_data or not hasattr(chats_data, "chats") or not chats_data.chats:
+            return
+
+        async with async_session_factory() as session:
+            for c in chats_data.chats:
+                chat_id = str(c.chat_id)
+                chat_type = getattr(c, "type", "") or ""
+                chat_title = getattr(c, "title", None)
+
+                if chat_type in ("dialog", "user") or not chat_title or chat_title.lower() == "диалог":
+                    continue
+
+                owner_id = str(c.owner_id) if getattr(c, "owner_id", None) else None
+
+                res_chat = await session.execute(select(Chat).where(Chat.max_chat_id == chat_id))
+                chat_row = res_chat.scalar_one_or_none()
+                if not chat_row:
+                    chat_row = Chat(max_chat_id=chat_id, title=chat_title, owner_id=owner_id)
+                    session.add(chat_row)
+                else:
+                    chat_row.title = chat_title
+                    if owner_id:
+                        chat_row.owner_id = owner_id
+
+                if owner_id:
+                    res_m = await session.execute(
+                        select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == owner_id)
+                    )
+                    if not res_m.scalar_one_or_none():
+                        session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher"))
+
+                try:
+                    admins_data = await target_bot.get_list_admin_chat(int(chat_id))
+                    if admins_data and hasattr(admins_data, "members") and admins_data.members:
+                        for adm in admins_data.members:
+                            adm_id = str(adm.user_id)
+                            adm_name = f"{adm.first_name or ''} {adm.last_name or ''}".strip() or adm.username or f"Учитель {adm_id}"
+
+                            u_res = await session.execute(select(User).where(User.max_user_id == adm_id))
+                            u_row = u_res.scalar_one_or_none()
+                            if not u_row:
+                                session.add(User(max_user_id=adm_id, display_name=adm_name, role="teacher", balance_spasibki=10, xp=100))
+                            else:
+                                u_row.role = "teacher"
+                                if adm_name and not adm_name.startswith("Учитель "):
+                                    u_row.display_name = adm_name
+
+                            am_res = await session.execute(
+                                select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == adm_id)
+                            )
+                            if not am_res.scalar_one_or_none():
+                                session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher"))
+                            else:
+                                am_row = am_res.scalar_one()
+                                am_row.role = "teacher"
+                except Exception:
+                    pass
+
+            await session.commit()
+            print("[БОТ] Синхронизация чатов и администраторов завершена")
+    except Exception as e:
+        print(f"[БОТ] Синхронизация чатов: {e}")
+
 @dp.message_created()
 async def on_generic_message(event: MessageCreated):
     if not event.message or not event.message.body:
         return
+
+    chat_id = str(event.chat.chat_id) if event.chat else ""
+    chat_type = getattr(event.chat, "type", "") or ""
+    chat_title = getattr(event.chat, "title", None)
+    is_group = bool(chat_type in ("chat", "group", "channel") and chat_title and chat_title.lower() != "диалог")
+
+    sender_id = str(event.from_user.user_id) if event.from_user else ""
+    sender_name = extract_display_name(event.from_user)
+    owner_id = str(event.chat.owner_id) if event.chat and getattr(event.chat, "owner_id", None) else None
+
+    if is_group and sender_id:
+        async with async_session_factory() as session:
+            is_owner = bool(owner_id and owner_id == sender_id)
+            await ensure_user_and_chat(
+                session,
+                user_id=sender_id,
+                display_name=sender_name,
+                chat_id=chat_id,
+                chat_title=chat_title,
+                owner_id=owner_id,
+                is_admin=is_owner,
+                is_group=True,
+            )
 
     raw_text = event.message.body.text or ""
     if raw_text.startswith("/"):
@@ -257,8 +434,6 @@ async def on_generic_message(event: MessageCreated):
 
     helper_id = str(event.from_user.user_id) if event.from_user else ""
     helper_name = extract_display_name(event.from_user)
-    chat_id = str(event.chat.chat_id) if event.chat else ""
-    chat_title = getattr(event.chat, "title", None) or "Класс"
     answer_mid = event.message.body.mid
 
     async with async_session_factory() as session:
@@ -273,7 +448,14 @@ async def on_generic_message(event: MessageCreated):
             await event.message.reply(text="Вы не можете отвечать на свой собственный вопрос.")
             return
 
-        await ensure_user_and_chat(session, user_id=helper_id, display_name=helper_name, chat_id=chat_id, chat_title=chat_title)
+        await ensure_user_and_chat(
+            session,
+            user_id=helper_id,
+            display_name=helper_name,
+            chat_id=chat_id if is_group else None,
+            chat_title=chat_title,
+            is_group=is_group,
+        )
 
         ans = Answer(
             question_id=question.id,
@@ -426,8 +608,11 @@ async def on_callback_query(event: MessageCallback):
             leaders = leaders_res.scalars().all()
 
         lines = ["Топ помощников:\n"]
-        for idx, leader in enumerate(leaders, 1):
-            lines.append(f"{idx}. {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} спасибок)")
+        if not leaders:
+            lines.append("Пока нет участников с начисленными баллами.")
+        else:
+            for idx, leader in enumerate(leaders, 1):
+                lines.append(f"{idx}. {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} спасибок)")
 
         top_text = "\n".join(lines)
         try:

@@ -1,4 +1,4 @@
-let currentUserId = "1001";
+let currentUserId = "";
 let currentUserDisplayName = "";
 let currentUserData = null;
 let availableChats = [];
@@ -15,15 +15,20 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initTheme() {
-  const savedTheme = localStorage.getItem("sferum_theme") || "light";
-  applyTheme(savedTheme);
+  localStorage.removeItem("sferum_theme");
+  const savedTheme = localStorage.getItem("sferum_theme_v3");
+  if (savedTheme === "dark") {
+    applyTheme("dark");
+  } else {
+    applyTheme("light");
+  }
 }
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute("data-theme") || "light";
   const next = current === "light" ? "dark" : "light";
   applyTheme(next);
-  localStorage.setItem("sferum_theme", next);
+  localStorage.setItem("sferum_theme_v3", next);
 }
 
 function applyTheme(theme) {
@@ -32,11 +37,11 @@ function applyTheme(theme) {
   const moonIcon = document.getElementById("theme-icon-moon");
   if (sunIcon && moonIcon) {
     if (theme === "dark") {
-      sunIcon.classList.add("hidden");
-      moonIcon.classList.remove("hidden");
-    } else {
       sunIcon.classList.remove("hidden");
       moonIcon.classList.add("hidden");
+    } else {
+      sunIcon.classList.add("hidden");
+      moonIcon.classList.remove("hidden");
     }
   }
 }
@@ -110,7 +115,10 @@ function getInitials(name) {
 
 async function loadProfile() {
   try {
-    let url = `/api/profile?user_id=${currentUserId}`;
+    let url = `/api/profile?user_id=${encodeURIComponent(currentUserId)}`;
+    if (selectedChatId && selectedChatId !== "all") {
+      url += `&chat_id=${encodeURIComponent(selectedChatId)}`;
+    }
     if (currentUserDisplayName) {
       url += `&display_name=${encodeURIComponent(currentUserDisplayName)}`;
     }
@@ -119,6 +127,9 @@ async function loadProfile() {
     if (!res.ok) throw new Error("Profile error");
     const data = await res.json();
     currentUserData = data;
+    if (data.max_user_id) {
+      currentUserId = String(data.max_user_id);
+    }
 
     document.getElementById("header-name").textContent = data.display_name;
     const roleElem = document.getElementById("header-role");
@@ -147,14 +158,8 @@ async function loadProfile() {
     const shopCoins = document.getElementById("shop-coins");
     if (shopCoins) shopCoins.textContent = data.balance_spasibki;
 
-    const teacherNavBtn = document.getElementById("nav-teacher-btn");
-    const isTeacher = (data.role === "teacher" || data.role === "admin" || currentUserId === "9999");
-    if (teacherNavBtn) {
-      teacherNavBtn.style.display = isTeacher ? "flex" : "none";
-    }
-
     if (data.chats && data.chats.length > 0) {
-      availableChats = data.chats;
+      availableChats = data.chats.filter(c => c.title && c.title.toLowerCase() !== "диалог");
       if (selectedChatId === "all" || !availableChats.some(c => c.id === selectedChatId)) {
         selectedChatId = availableChats[0].id;
         selectedChatTitle = availableChats[0].title;
@@ -163,6 +168,12 @@ async function loadProfile() {
       availableChats = [{ id: "my_class", title: "Мой учебный класс", role: data.role }];
       selectedChatId = "my_class";
       selectedChatTitle = "Мой учебный класс";
+    }
+
+    const teacherNavBtn = document.getElementById("nav-teacher-btn");
+    const hasTeacherRole = (data.role === "teacher" || availableChats.some(c => c.role === "teacher"));
+    if (teacherNavBtn) {
+      teacherNavBtn.style.display = hasTeacherRole ? "flex" : "none";
     }
 
     updateClassSelectorUI();
@@ -185,7 +196,9 @@ function openClassModal() {
   const list = document.getElementById("sheet-classes-list");
   if (!modal || !list) return;
 
-  list.innerHTML = availableChats.map(c => `
+  const validChats = availableChats.filter(c => c.title && c.title.toLowerCase() !== "диалог");
+
+  list.innerHTML = validChats.map(c => `
     <div class="class-option-card ${c.id === selectedChatId ? 'selected' : ''}" onclick="selectClass('${c.id}', '${escapeHtml(c.title)}')">
       <div>
         <div class="class-option-name">${escapeHtml(c.title)}</div>
@@ -209,9 +222,25 @@ function closeClassModal(e) {
 function selectClass(chatId, chatTitle) {
   selectedChatId = chatId;
   selectedChatTitle = chatTitle;
+
+  const chatObj = availableChats.find(c => c.id === chatId);
+  if (chatObj) {
+    const roleElem = document.getElementById("header-role");
+    if (roleElem) {
+      if (chatObj.role === "teacher") {
+        roleElem.textContent = "Учитель";
+        roleElem.classList.add("teacher");
+      } else {
+        roleElem.textContent = "Ученик";
+        roleElem.classList.remove("teacher");
+      }
+    }
+  }
+
   updateClassSelectorUI();
   closeClassModal();
   showToast("Выбран класс: " + chatTitle);
+  loadProfile();
   refreshActiveTab();
 }
 
