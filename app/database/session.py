@@ -1,9 +1,8 @@
 import os
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlmodel import SQLModel, select
 from app.config import get_settings
 from app.database.models import (
-    Base,
     Achievement,
     Chat,
     ChatMember,
@@ -32,7 +31,7 @@ async_session_factory = async_sessionmaker(engine, expire_on_commit=False, class
 
 async def init_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
 
     async with async_session_factory() as session:
         res = await session.execute(select(Achievement).limit(1))

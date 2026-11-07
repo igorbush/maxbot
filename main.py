@@ -5,44 +5,30 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from maxapi import Bot
 
 from app.config import get_settings
 from app.database.session import init_db
-from app.services.max_client import get_bot_client
-from app.services.bot_service import handle_update
+from app.services.bot_service import dp
 from app.api.webapp import router as webapp_router
 
 settings = get_settings()
 
-async def run_bot_polling():
-    client = get_bot_client()
-    if not client.token:
-        return
-
-    marker = None
-    while True:
-        try:
-            data = await client.get_updates(limit=100, timeout=30, marker=marker)
-            for update in data.get("updates", []):
-                try:
-                    await handle_update(update, client=client)
-                except Exception:
-                    pass
-            new_marker = data.get("marker")
-            if new_marker is not None:
-                marker = new_marker
-        except asyncio.CancelledError:
-            break
-        except Exception:
-            await asyncio.sleep(2)
+bot = None
+if settings.MAX_BOT_TOKEN:
+    bot = Bot(token=settings.MAX_BOT_TOKEN)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     bot_task = None
-    if settings.MAX_BOT_TOKEN:
-        bot_task = asyncio.create_task(run_bot_polling())
+    if bot and settings.MAX_BOT_TOKEN:
+        print("[БОТ] Запуск опроса MAX API (библиотека maxapi)...")
+        bot_task = asyncio.create_task(dp.start_polling(bot))
     yield
+    if bot:
+        print("[БОТ] Остановка опроса MAX API...")
+        await dp.stop_polling()
     if bot_task:
         bot_task.cancel()
         try:
