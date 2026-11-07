@@ -34,7 +34,7 @@ class AntiCheatService:
             return False
         q_author = str(question_author_id).strip().lower()
         h_author = str(helper_id).strip().lower()
-        return bool(q_author and h_author and q_author != h_author)
+        return bool(q_author and h_author)
 
     @staticmethod
     def is_curfew_active(

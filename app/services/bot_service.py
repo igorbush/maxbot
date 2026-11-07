@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlmodel import select, delete
+from sqlmodel import select, delete, or_
 from maxapi import Bot, Dispatcher
 from maxapi.filters.command import Command, CommandStart
 from maxapi.types import MessageCreated, MessageCallback, BotStarted, BotAdded
@@ -330,14 +330,9 @@ async def on_ask_command(event: MessageCreated):
         await session.commit()
         await session.refresh(q)
 
-        card_text = (
-            f"❓ Вопрос по учёбе #{q.id}\n\n"
-            f"Автор: {user_name}\n"
-            f"Чат: {chat_title}\n\n"
-            f"«{question_text}»\n\n"
-            f"💬 Чтобы помочь, ответьте реплаем (Reply) на это сообщение!"
+        sent = await event.message.reply(
+            text=f"💡 Вопрос #{q.id} принят в Лигу Помощников! Ответьте на него реплаем, чтобы помочь (+50 XP)."
         )
-        sent = await event.message.answer(text=card_text)
         if sent and sent.message and sent.message.body and sent.message.body.mid:
             q.group_message_id = str(sent.message.body.mid)
             await session.commit()
@@ -460,16 +455,13 @@ async def on_generic_message(event: MessageCreated):
                     Question.group_message_id == parent_mid,
                     Question.user_message_id == parent_mid,
                     Question.group_message_id.like(f"%{parent_mid}%"),
+                    Question.user_message_id.like(f"%{parent_mid}%"),
                 ),
                 Question.status == "open",
             )
         )
         question = res_q.scalar_one_or_none()
         if not question:
-            return
-
-        if helper_id == question.author_max_id:
-            await event.message.reply(text="Вы не можете отвечать на свой собственный вопрос.")
             return
 
         await ensure_user_and_chat(
@@ -541,16 +533,27 @@ async def on_callback_query(event: MessageCallback):
                     await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Только автор вопроса может подтвердить помощь.")
                 return
 
-            await GamificationService.award_gratitude(
-                session=session,
-                question=question,
-                answer=answer,
-            )
+            try:
+                await GamificationService.award_gratitude(
+                    session=session,
+                    question=question,
+                    answer=answer,
+                )
+                print(f"[БОТ] Помощь подтверждена: вопрос #{question.id}, {answer.author_name} получил +50 XP и +1 спасибку")
+            except Exception as e:
+                print(f"[БОТ] Ошибка award_gratitude: {e}")
+                if event.callback and event.callback.callback_id:
+                    await event.bot.send_callback(callback_id=event.callback.callback_id, notification=f"Ошибка: {e}")
+                return
 
-            print(f"[БОТ] Помощь подтверждена: вопрос #{question.id}, {answer.author_name} получил +50 XP и +1 спасибку")
+        if event.callback and event.callback.callback_id:
+            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Помощь принята!")
 
         try:
-            await event.message.edit(text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!")
+            await event.message.edit(
+                text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!",
+                attachments=[],
+            )
         except Exception:
             pass
 
@@ -565,8 +568,6 @@ async def on_callback_query(event: MessageCallback):
         except Exception:
             pass
 
-        if event.callback and event.callback.callback_id:
-            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Помощь принята!")
         return
 
     if payload.startswith("help_reject:"):
@@ -578,13 +579,17 @@ async def on_callback_query(event: MessageCallback):
                 answer.status = "rejected"
                 await session.commit()
 
+        if event.callback and event.callback.callback_id:
+            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответ отклонён")
+
         try:
-            await event.message.edit(text="Ответ отклонён. Вопрос остаётся открытым для других участников.")
+            await event.message.edit(
+                text="Ответ отклонён. Вопрос остаётся открытым для других участников.",
+                attachments=[],
+            )
         except Exception:
             pass
 
-        if event.callback and event.callback.callback_id:
-            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответ отклонён")
         return
 
     kb = build_main_menu_keyboard()
