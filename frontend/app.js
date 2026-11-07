@@ -1,23 +1,62 @@
 let currentUserId = "1001";
+let currentUserDisplayName = "";
 let currentUserData = null;
 let availableChats = [];
 let selectedChatId = "all";
-let selectedChatTitle = "Все классы";
+let selectedChatTitle = "Учебный класс";
 let currentLeaderboardPeriod = "all_time";
 let currentLeaderboardScope = "class";
 let teacherSelectedChatId = "all";
 
 document.addEventListener("DOMContentLoaded", () => {
+  initTheme();
   initUserFromMAX();
   loadProfile();
 });
 
-function initUserFromMAX() {
+function initTheme() {
+  const savedTheme = localStorage.getItem("sferum_theme") || "light";
+  applyTheme(savedTheme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "light";
+  const next = current === "light" ? "dark" : "light";
+  applyTheme(next);
+  localStorage.setItem("sferum_theme", next);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const sunIcon = document.getElementById("theme-icon-sun");
+  const moonIcon = document.getElementById("theme-icon-moon");
+  if (sunIcon && moonIcon) {
+    if (theme === "dark") {
+      sunIcon.classList.add("hidden");
+      moonIcon.classList.remove("hidden");
+    } else {
+      sunIcon.classList.remove("hidden");
+      moonIcon.classList.add("hidden");
+    }
+  }
+}
+
+async function initUserFromMAX() {
   const urlParams = new URLSearchParams(window.location.search);
   const urlUserId = urlParams.get("user_id");
 
   if (window.WebApp && window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user) {
-    currentUserId = String(window.WebApp.initDataUnsafe.user.id);
+    const maxUser = window.WebApp.initDataUnsafe.user;
+    currentUserId = String(maxUser.id);
+
+    const fName = maxUser.first_name || "";
+    const lName = maxUser.last_name || "";
+    const builtName = `${fName} ${lName}`.trim() || maxUser.username || "";
+    if (builtName) {
+      currentUserDisplayName = builtName;
+      syncUserWithBackend(maxUser.id, fName, lName, maxUser.username);
+    }
+
     const demoBar = document.getElementById("demo-bar");
     if (demoBar) demoBar.style.display = "none";
   } else if (urlUserId) {
@@ -27,8 +66,24 @@ function initUserFromMAX() {
   }
 }
 
+async function syncUserWithBackend(userId, firstName, lastName, username) {
+  try {
+    await fetch("/api/sync-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: String(userId),
+        first_name: firstName,
+        last_name: lastName,
+        username: username,
+      }),
+    });
+  } catch (err) {}
+}
+
 function switchDemoUser(newUserId) {
   currentUserId = String(newUserId);
+  currentUserDisplayName = "";
   showToast("Выбран профиль: " + currentUserId);
   loadProfile();
   refreshActiveTab();
@@ -45,7 +100,7 @@ function refreshActiveTab() {
 }
 
 function getInitials(name) {
-  if (!name) return "ШК";
+  if (!name) return "УЧ";
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) {
     return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -55,7 +110,12 @@ function getInitials(name) {
 
 async function loadProfile() {
   try {
-    const res = await fetch(`/api/profile?user_id=${currentUserId}`);
+    let url = `/api/profile?user_id=${currentUserId}`;
+    if (currentUserDisplayName) {
+      url += `&display_name=${encodeURIComponent(currentUserDisplayName)}`;
+    }
+
+    const res = await fetch(url);
     if (!res.ok) throw new Error("Profile error");
     const data = await res.json();
     currentUserData = data;
@@ -63,7 +123,7 @@ async function loadProfile() {
     document.getElementById("header-name").textContent = data.display_name;
     const roleElem = document.getElementById("header-role");
     if (data.role === "teacher") {
-      roleElem.textContent = "Учитель 🎓";
+      roleElem.textContent = "Учитель";
       roleElem.classList.add("teacher");
     } else {
       roleElem.textContent = "Ученик";
@@ -88,7 +148,7 @@ async function loadProfile() {
     if (shopCoins) shopCoins.textContent = data.balance_spasibki;
 
     const teacherNavBtn = document.getElementById("nav-teacher-btn");
-    const isTeacher = (data.role === "teacher" || data.role === "admin" || currentUserId === "9999" || currentUserId === "teacher_1");
+    const isTeacher = (data.role === "teacher" || data.role === "admin" || currentUserId === "9999");
     if (teacherNavBtn) {
       teacherNavBtn.style.display = isTeacher ? "flex" : "none";
     }
@@ -100,9 +160,9 @@ async function loadProfile() {
         selectedChatTitle = availableChats[0].title;
       }
     } else {
-      availableChats = [{ id: "chat_7b", title: "7Б Класс", role: data.role }];
-      selectedChatId = "chat_7b";
-      selectedChatTitle = "7Б Класс";
+      availableChats = [{ id: "my_class", title: "Мой учебный класс", role: data.role }];
+      selectedChatId = "my_class";
+      selectedChatTitle = "Мой учебный класс";
     }
 
     updateClassSelectorUI();
@@ -128,7 +188,7 @@ function openClassModal() {
   list.innerHTML = availableChats.map(c => `
     <div class="class-option-card ${c.id === selectedChatId ? 'selected' : ''}" onclick="selectClass('${c.id}', '${escapeHtml(c.title)}')">
       <div>
-        <div class="class-option-name">🏫 ${escapeHtml(c.title)}</div>
+        <div class="class-option-name">${escapeHtml(c.title)}</div>
         <div class="class-option-role">${c.role === 'teacher' ? 'Преподаватель' : 'Ученик'}</div>
       </div>
       <div>${c.id === selectedChatId ? '✓' : ''}</div>
@@ -228,17 +288,17 @@ async function loadLeaderboard() {
 
     container.innerHTML = leaders.map(item => {
       let rankText = `#${item.rank_position}`;
-      let medalClass = "";
-      if (item.rank_position === 1) { rankText = "🥇"; medalClass = "medal-1"; }
-      if (item.rank_position === 2) { rankText = "🥈"; medalClass = "medal-2"; }
-      if (item.rank_position === 3) { rankText = "🥉"; medalClass = "medal-3"; }
+      let topClass = "";
+      if (item.rank_position === 1) topClass = "top-1";
+      if (item.rank_position === 2) topClass = "top-2";
+      if (item.rank_position === 3) topClass = "top-3";
 
       const isCurrent = String(item.max_user_id) === String(currentUserId);
       const initials = getInitials(item.display_name);
 
       return `
         <div class="leader-card ${isCurrent ? 'current-user' : ''}">
-          <div class="leader-rank-col ${medalClass}">${rankText}</div>
+          <div class="leader-rank-col ${topClass}">${rankText}</div>
           <div class="leader-avatar">${initials}</div>
           <div class="leader-details">
             <div class="leader-name">${escapeHtml(item.display_name)}</div>
@@ -246,7 +306,7 @@ async function loadLeaderboard() {
           </div>
           <div class="leader-score">
             <div class="leader-xp-val">${item.xp} XP</div>
-            <div class="leader-coins-val">🪙 ${item.balance_spasibki}</div>
+            <div class="leader-coins-val">${item.balance_spasibki} спасибок</div>
           </div>
         </div>
       `;
@@ -272,7 +332,6 @@ async function loadAchievements() {
 
     container.innerHTML = achievements.map(ach => {
       const isUnlocked = ach.unlocked;
-      const icon = ach.icon_url || "🎖";
       let statusTag = "";
       if (isUnlocked && ach.awarded_at) {
         const d = new Date(ach.awarded_at);
@@ -285,7 +344,12 @@ async function loadAchievements() {
 
       return `
         <div class="ach-item-card ${isUnlocked ? 'unlocked' : 'locked'}">
-          <div class="ach-icon-circle">${icon}</div>
+          <div class="ach-icon-circle">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="7"/>
+              <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>
+            </svg>
+          </div>
           <div class="ach-title">${escapeHtml(ach.name_ru)}</div>
           <div class="ach-desc">${escapeHtml(ach.description_ru)}</div>
           ${statusTag}
@@ -319,7 +383,7 @@ async function loadRewards() {
           <div class="reward-main-col">
             <div class="reward-item-title">${escapeHtml(r.title)}</div>
             <div class="reward-item-desc">${escapeHtml(r.description)}</div>
-            <div class="reward-cost-tag">🪙 ${r.cost_spasibki} спасибок</div>
+            <div class="reward-cost-tag">${r.cost_spasibki} спасибок</div>
           </div>
           <div>
             <button class="sferum-btn btn-primary" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>
@@ -350,7 +414,7 @@ async function loadMyClaims() {
       let statusText = "Ожидает учителя";
       let statusClass = "status-requested";
       if (c.status === "approved") {
-        statusText = "Одобрено учителем ✅";
+        statusText = "Одобрено учителем";
         statusClass = "status-approved";
       } else if (c.status === "rejected") {
         statusText = "Отклонено";
@@ -361,7 +425,7 @@ async function loadMyClaims() {
         <div class="claim-history-row">
           <div>
             <strong>${escapeHtml(c.title)}</strong>
-            <div class="stat-caption">🪙 ${c.cost_spasibki} спасибок</div>
+            <div class="stat-caption">${c.cost_spasibki} спасибок</div>
           </div>
           <span class="claim-status-pill ${statusClass}">${statusText}</span>
         </div>
@@ -375,7 +439,7 @@ async function loadMyClaims() {
 
 async function handleClaimReward(rewardId, cost) {
   if (currentUserData && currentUserData.balance_spasibki < cost) {
-    showToast(`Нужно ${cost} спасибок! У вас ${currentUserData.balance_spasibki}`);
+    showToast(`Нужно ${cost} спасибок. У вас ${currentUserData.balance_spasibki}`);
     return;
   }
 
@@ -432,12 +496,12 @@ async function loadTeacherData() {
         <div class="teacher-claim-card">
           <div class="claim-user-row">
             <span class="claim-student-name">${escapeHtml(c.student_name)}</span>
-            <span class="claim-price-pill">🪙 ${c.cost_spasibki}</span>
+            <span class="claim-price-pill">${c.cost_spasibki} спасибок</span>
           </div>
           <div class="claim-reward-text">Запрос: <b>${escapeHtml(c.reward_title)}</b></div>
           <div class="claim-btn-row">
-            <button class="sferum-btn btn-primary flex-1" onclick="handleReviewClaim(${c.claim_id}, 'approved')">Одобрить ✓</button>
-            <button class="sferum-btn btn-outline flex-1" onclick="handleReviewClaim(${c.claim_id}, 'rejected')">Отклонить ✕</button>
+            <button class="sferum-btn btn-primary flex-1" onclick="handleReviewClaim(${c.claim_id}, 'approved')">Одобрить</button>
+            <button class="sferum-btn btn-outline flex-1" onclick="handleReviewClaim(${c.claim_id}, 'rejected')">Отклонить</button>
           </div>
         </div>
       `).join("");
@@ -460,7 +524,7 @@ async function loadStudentsDropdown() {
     const res = await fetch(url);
     const students = await res.json();
     selectElem.innerHTML = '<option value="">Выберите ученика...</option>' +
-      students.map(s => `<option value="${s.max_user_id}">${escapeHtml(s.display_name)} (${s.xp} XP, 🪙 ${s.balance_spasibki})</option>`).join("");
+      students.map(s => `<option value="${s.max_user_id}">${escapeHtml(s.display_name)} (${s.xp} XP, ${s.balance_spasibki} спасибок)</option>`).join("");
   } catch (err) {
     selectElem.innerHTML = '<option value="">Ошибка загрузки учеников</option>';
   }

@@ -29,6 +29,89 @@ elif db_url.startswith("sqlite:///"):
 engine = create_async_engine(db_url)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
+READY_REWARDS = [
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Освобождение от одного домашнего задания",
+        "description": "Возможность не сдавать или сдать позже любое обычное домашнее задание по согласованию с учителем.",
+        "cost_spasibki": 50,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Выбор соседа по парте на неделю",
+        "description": "Право выбрать соседа по парте на уроках в течение одной учебной недели.",
+        "cost_spasibki": 35,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Индивидуальная консультация учителя",
+        "description": "20 минут персонального разбора трудных тем и задач перед контрольной работой.",
+        "cost_spasibki": 25,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Иммунитет от ответа у доски на 1 урок",
+        "description": "Возможность пропустить вызов к доске на одном уроке по вашему выбору.",
+        "cost_spasibki": 40,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Своя тема школьного проекта",
+        "description": "Право защитить проект или доклад на самостоятельно выбранную интересную тему.",
+        "cost_spasibki": 30,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Право пересдачи самостоятельной работы",
+        "description": "Возможность переписать одну самостоятельную работу для повышения четвертной оценки.",
+        "cost_spasibki": 45,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Дополнительный балл к проверочной",
+        "description": "Плюс один балл к итоговой оценке за одну проверочную работу в четверти.",
+        "cost_spasibki": 60,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Ассистент учителя на уроке",
+        "description": "Помощь педагогу в подготовке интерактивных материалов и проведении урока.",
+        "cost_spasibki": 20,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Музыкальный плейлист на перемене",
+        "description": "Право поставить подборку любимых треков на перемене в классе.",
+        "cost_spasibki": 15,
+        "is_active": True,
+    },
+    {
+        "created_by_teacher_id": "teacher_admin",
+        "chat_id": None,
+        "title": "Диплом знатока и помощника школы",
+        "description": "Именная почётная грамота от учителя за активную взаимовыручку для школьного портфолио.",
+        "cost_spasibki": 70,
+        "is_active": True,
+    },
+]
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
@@ -39,61 +122,12 @@ async def init_db():
             for item in DEFAULT_ACHIEVEMENTS:
                 session.add(Achievement(**item))
 
-            demo_chats = [
-                Chat(max_chat_id="chat_7b", title="7Б Класс (МБОУ СОШ №1)", owner_id="9999"),
-                Chat(max_chat_id="chat_8a", title="8А Класс (Физика)", owner_id="9999"),
-            ]
-            for c in demo_chats:
-                session.add(c)
+        rew_res = await session.execute(select(Reward).limit(1))
+        if rew_res.scalar_one_or_none() is None:
+            for r in READY_REWARDS:
+                session.add(Reward(**r))
 
-            demo_users = [
-                User(max_user_id="1001", display_name="Аркадий Петров", role="student", balance_spasibki=18, xp=480, rank="Знаток"),
-                User(max_user_id="1002", display_name="Мария Смирнова", role="student", balance_spasibki=9, xp=290, rank="Знаток"),
-                User(max_user_id="1003", display_name="Иван Васильев", role="student", balance_spasibki=3, xp=110, rank="Любитель"),
-                User(max_user_id="1004", display_name="Дарья Ковалёва", role="student", balance_spasibki=14, xp=350, rank="Знаток"),
-                User(max_user_id="1005", display_name="Артём Морозов", role="student", balance_spasibki=22, xp=520, rank="Эксперт"),
-                User(max_user_id="9999", display_name="Мария Ивановна", role="teacher", balance_spasibki=0, xp=0, rank="Учитель"),
-                User(max_user_id="teacher_1", display_name="Сергей Викторович", role="teacher", balance_spasibki=0, xp=0, rank="Учитель"),
-            ]
-            for u in demo_users:
-                session.add(u)
-
-            demo_members = [
-                ChatMember(chat_max_id="chat_7b", user_max_id="9999", role="teacher"),
-                ChatMember(chat_max_id="chat_7b", user_max_id="1001", role="student"),
-                ChatMember(chat_max_id="chat_7b", user_max_id="1002", role="student"),
-                ChatMember(chat_max_id="chat_7b", user_max_id="1003", role="student"),
-                ChatMember(chat_max_id="chat_7b", user_max_id="1004", role="student"),
-                ChatMember(chat_max_id="chat_7b", user_max_id="1005", role="student"),
-                ChatMember(chat_max_id="chat_8a", user_max_id="9999", role="teacher"),
-                ChatMember(chat_max_id="chat_8a", user_max_id="1001", role="student"),
-                ChatMember(chat_max_id="chat_8a", user_max_id="1004", role="student"),
-            ]
-            for m in demo_members:
-                session.add(m)
-
-            demo_rewards = [
-                Reward(created_by_teacher_id="9999", chat_id="chat_7b", title="Освобождение от одного ДЗ", description="Возможность сдать одно домашнее задание позже или не сдавать", cost_spasibki=50, is_active=True),
-                Reward(created_by_teacher_id="9999", chat_id="chat_7b", title="Выбор соседа по парте", description="Возможность пересесть на неделю к выбранному однокласснику", cost_spasibki=30, is_active=True),
-                Reward(created_by_teacher_id="9999", chat_id=None, title="Консультация с учителем", description="30 минут разбора трудной темы перед контрольной работой", cost_spasibki=20, is_active=True),
-                Reward(created_by_teacher_id="9999", chat_id=None, title="Своя тема проекта", description="Право выбрать нестандартную творческую тему школьного проекта", cost_spasibki=40, is_active=True),
-            ]
-            for r in demo_rewards:
-                session.add(r)
-
-            demo_q = Question(
-                group_chat_id="chat_7b",
-                group_chat_title="7Б Класс (МБОУ СОШ №1)",
-                group_message_id="msg_demo_1",
-                author_max_id="1002",
-                author_name="Мария Смирнова",
-                text="Ребята, помогите решить задачу №5 по геометрии! Не получается построить правильный треугольник.",
-                subject="Геометрия",
-                status="open",
-            )
-            session.add(demo_q)
-
-            await session.commit()
+        await session.commit()
 
 async def get_db_session():
     async with async_session_factory() as session:

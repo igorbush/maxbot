@@ -101,6 +101,12 @@ class CreateRewardRequest(BaseModel):
     cost_spasibki: int
     chat_id: Optional[str] = None
 
+class SyncUserRequest(BaseModel):
+    user_id: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+
 class AwardBadgeRequest(BaseModel):
     student_id: str
     badge_code: Optional[str] = "teacher_choice"
@@ -172,10 +178,16 @@ async def get_profile(
 
     if not user_chats:
         all_chats_res = await session.execute(select(Chat))
-        user_chats = [
-            ChatItem(id=c.max_chat_id, title=c.title, role=current_user.role)
-            for c in all_chats_res.scalars().all()
-        ]
+        chats_found = all_chats_res.scalars().all()
+        if chats_found:
+            user_chats = [
+                ChatItem(id=c.max_chat_id, title=c.title, role=current_user.role)
+                for c in chats_found
+            ]
+        else:
+            user_chats = [
+                ChatItem(id="my_class", title="Мой учебный класс", role=current_user.role)
+            ]
 
     level = (current_user.xp // 100) + 1
     return UserProfileResponse(
@@ -193,6 +205,30 @@ async def get_profile(
         chats=user_chats,
         achievements=achievements_data,
     )
+
+@router.post("/sync-user")
+async def sync_user(
+    body: SyncUserRequest,
+    session: AsyncSession = Depends(get_db_session),
+):
+    uid = str(body.user_id).strip()
+    full_name = f"{body.first_name or ''} {body.last_name or ''}".strip() or body.username or f"Участник {uid}"
+    res = await session.execute(select(User).where(User.max_user_id == uid))
+    user = res.scalar_one_or_none()
+    if not user:
+        user = User(
+            max_user_id=uid,
+            display_name=full_name,
+            role="student",
+            balance_spasibki=10,
+            xp=100,
+            rank="Любитель",
+        )
+        session.add(user)
+    else:
+        user.display_name = full_name
+    await session.commit()
+    return {"status": "ok", "display_name": full_name}
 
 @router.get("/chats", response_model=List[ChatItem])
 async def get_chats(

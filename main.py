@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from maxapi import Bot
+from maxapi.types import BotCommand
 
 from app.config import get_settings
 from app.database.session import init_db
@@ -18,11 +19,26 @@ bot = None
 if settings.MAX_BOT_TOKEN:
     bot = Bot(token=settings.MAX_BOT_TOKEN)
 
+async def register_bot_commands(target_bot: Bot):
+    try:
+        commands = [
+            BotCommand(name="ask", description="Задать вопрос классу"),
+            BotCommand(name="start", description="Главное меню и профиль"),
+            BotCommand(name="help", description="Инструкция по взаимопомощи"),
+            BotCommand(name="manage", description="Кабинет учителя"),
+        ]
+        await target_bot.set_my_commands(*commands)
+        await target_bot.set_commands(*commands)
+        print("[БОТ] Команды бота (/ask, /start, /help, /manage) зарегистрированы в MAX API")
+    except Exception as e:
+        print(f"[БОТ] Регистрация команд: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     bot_task = None
     if bot and settings.MAX_BOT_TOKEN:
+        await register_bot_commands(bot)
         print("[БОТ] Запуск опроса MAX API (библиотека maxapi)...")
         bot_task = asyncio.create_task(dp.start_polling(bot))
     yield

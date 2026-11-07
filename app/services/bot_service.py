@@ -3,7 +3,7 @@ from sqlmodel import select
 from maxapi import Bot, Dispatcher
 from maxapi.filters.command import Command, CommandStart
 from maxapi.types import MessageCreated, MessageCallback, BotStarted
-from maxapi.types import CallbackButton, LinkButton
+from maxapi.types import CallbackButton
 from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 from app.config import get_settings
@@ -26,17 +26,16 @@ def extract_display_name(user) -> str:
     if username:
         return username
     user_id = getattr(user, "user_id", "")
-    return f"Школьник {user_id}"
+    return f"Участник {user_id}"
 
-def build_main_menu_keyboard(webapp_url: str):
+def build_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.add(LinkButton(text="📱 Открыть WebApp", url=webapp_url))
     builder.add(CallbackButton(text="❓ Как спросить?", payload="menu:ask_info"))
     builder.add(CallbackButton(text="👤 Мой профиль", payload="menu:profile"))
     builder.add(CallbackButton(text="🏆 Рейтинг", payload="menu:top"))
-    builder.add(CallbackButton(text="🎁 Лавка", payload="menu:shop"))
+    builder.add(CallbackButton(text="🎁 Лавка наград", payload="menu:shop"))
     builder.add(CallbackButton(text="🎓 Кабинет учителя", payload="menu:teacher"))
-    builder.adjust(1, 2, 2, 1)
+    builder.adjust(2, 2, 1)
     return builder
 
 def build_question_keyboard():
@@ -64,13 +63,13 @@ async def ensure_user_and_chat(session, user_id: str, display_name: str, chat_id
             max_user_id=user_id,
             display_name=display_name,
             role=initial_role,
-            balance_spasibki=5,
-            xp=50,
-            rank="Новичок",
+            balance_spasibki=10,
+            xp=100,
+            rank="Любитель",
         )
         session.add(user)
     else:
-        if display_name and not display_name.startswith("Школьник "):
+        if display_name and not display_name.startswith("Участник "):
             user.display_name = display_name
         if is_chat_creator and user.role != "teacher":
             user.role = "teacher"
@@ -81,7 +80,7 @@ async def ensure_user_and_chat(session, user_id: str, display_name: str, chat_id
         if not chat_row:
             chat_row = Chat(
                 max_chat_id=chat_id,
-                title=chat_title or "Школьный чат",
+                title=chat_title or "Учебный чат",
                 owner_id=owner_id,
             )
             session.add(chat_row)
@@ -115,16 +114,14 @@ async def on_bot_started(event: BotStarted):
     async with async_session_factory() as session:
         await ensure_user_and_chat(session, user_id=user_id, display_name=user_name)
 
-    webapp_url = f"{settings.WEBAPP_BASE_URL}?user_id={user_id}"
-    kb = build_main_menu_keyboard(webapp_url)
-
+    kb = build_main_menu_keyboard()
     text = (
-        f"👋 Привет, {user_name}!\n\n"
-        f"Добро пожаловать в «Лигу Помощников» — бот взаимопомощи для школьников в мессенджере MAX!\n\n"
-        f"🔹 Задавайте вопросы по домашке командой /ask в чате класса.\n"
-        f"🔹 Отвечайте реплаем на вопросы одноклассников, получайте XP и монетки-спасибки 🪙!\n"
-        f"🔹 Обменивайте спасибки на классные школьные бонусы в лавке наград!\n\n"
-        f"Используйте кнопки ниже для быстрого управления:"
+        f"Здравствуйте, {user_name}!\n\n"
+        f"«Лига Помощников» — бот взаимопомощи для школьников в мессенджере MAX.\n\n"
+        f"• Задавайте вопросы по учебе командой /ask в чате группы или класса.\n"
+        f"• Отвечайте реплаем на вопросы одноклассников, получайте XP и спасибки.\n"
+        f"• Обменивайте спасибки на школьные бонусы в лавке наград!\n\n"
+        f"Используйте кнопки под сообщением для быстрого управления:"
     )
     if event.chat:
         chat_target = int(event.chat.chat_id) if str(event.chat.chat_id).isdigit() else event.chat.chat_id
@@ -144,12 +141,10 @@ async def on_start_command(event: MessageCreated):
     async with async_session_factory() as session:
         await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, chat_id=chat_id, chat_title=chat_title, owner_id=owner_id)
 
-    webapp_url = f"{settings.WEBAPP_BASE_URL}?user_id={user_id}"
-    kb = build_main_menu_keyboard(webapp_url)
-
+    kb = build_main_menu_keyboard()
     text = (
-        f"👋 Рады видеть, {user_name}!\n\n"
-        f"«Лига Помощников» готова к работе. Вы можете открыть мини-приложение, проверить звание или посмотреть доступные награды."
+        f"Здравствуйте, {user_name}!\n\n"
+        f"Лига Помощников готова к работе. Выберите действие на клавиатуре бота:"
     )
     await event.message.answer(text=text, attachments=[kb.as_markup()])
 
@@ -159,16 +154,14 @@ async def on_help_command(event: MessageCreated):
     user_name = extract_display_name(event.from_user)
     print(f"[БОТ] Команда /help от {user_name}")
 
-    webapp_url = f"{settings.WEBAPP_BASE_URL}?user_id={user_id}"
-    kb = build_main_menu_keyboard(webapp_url)
-
+    kb = build_main_menu_keyboard()
     text = (
-        f"📖 Как пользоваться «Лигой Помощников»:\n\n"
-        f"1. Добавьте бота в чат вашего класса.\n"
-        f"2. Чтобы задать вопрос, напишите: /ask <ваш вопрос>\n"
+        f"Инструкция по работе с Лигой Помощников:\n\n"
+        f"1. Добавьте бота в ваш учебный чат.\n"
+        f"2. Чтобы задать вопрос, напишите:\n/ask <текст вопроса>\n"
         f"3. Чтобы помочь, ответьте реплаем (Reply) на сообщение бота с вопросом.\n"
-        f"4. Автор вопроса нажимает кнопку «Помог», и вам начисляется +50 XP и +1 спасибка 🪙!\n"
-        f"5. В лавке обменивайте спасибки на школьные бонусы от учителя!"
+        f"4. Автор вопроса нажимает кнопку «Помог», и помощнику начисляется +50 XP и +1 спасибка.\n"
+        f"5. Накопленные спасибки можно обменивать на награды от учителей."
     )
     await event.message.answer(text=text, attachments=[kb.as_markup()])
 
@@ -183,22 +176,20 @@ async def on_manage_command(event: MessageCreated):
         user = res.scalar_one_or_none()
         is_teacher = bool(user and user.role in ("teacher", "admin"))
 
-    webapp_url = f"{settings.WEBAPP_BASE_URL}?user_id={user_id}"
+    kb = build_main_menu_keyboard()
 
     if is_teacher:
         text = (
-            f"🎓 Кабинет учителя для {user_name}\n\n"
-            f"Здесь вы можете одобрять запросы учеников на награды, добавлять новые школьные бонусы и отмечать лучших помощников наградой «Выбор учителя»."
+            f"Кабинет учителя для {user_name}\n\n"
+            f"Вам доступно одобрение заявок учеников на награды, создание бонусов и вручение награды «Выбор учителя» (+100 XP и +20 спасибок)."
         )
     else:
         text = (
-            f"🎓 Кабинет учителя\n\n"
-            f"Этот раздел предназначен для педагогов и создателей чатов классов. В WebApp вы можете посмотреть статус своих наград."
+            f"Кабинет учителя\n\n"
+            f"Этот раздел предназначен для преподавателей и кураторов классов."
         )
 
-    builder = InlineKeyboardBuilder()
-    builder.add(LinkButton(text="📱 Открыть кабинет в WebApp", url=webapp_url))
-    await event.message.answer(text=text, attachments=[builder.as_markup()])
+    await event.message.answer(text=text, attachments=[kb.as_markup()])
 
 @dp.message_created(Command("ask"))
 async def on_ask_command(event: MessageCreated):
@@ -214,7 +205,7 @@ async def on_ask_command(event: MessageCreated):
 
     if not question_text:
         await event.message.answer(
-            text="❗ Пожалуйста, укажите текст вопроса.\n\nПример:\n/ask Ребята, подскажите, как решить номер 4 по геометрии?"
+            text="Пожалуйста, укажите текст вопроса после команды.\n\nПример:\n/ask Ребята, как решить задачу №4 по геометрии?"
         )
         return
 
@@ -236,15 +227,15 @@ async def on_ask_command(event: MessageCreated):
         await session.commit()
         await session.refresh(q)
 
-        print(f"[БОТ] Опубликован вопрос #{q.id} от {user_name} в чате '{chat_title}': «{question_text}»")
+        print(f"[БОТ] Вопрос #{q.id} опубликован в чате '{chat_title}' от {user_name}")
 
     kb = build_question_keyboard()
     card_text = (
-        f"❓ ВОПРОС ПО УЧЁБЕ #{q.id}\n\n"
-        f"👤 Автор: {user_name}\n"
-        f"🏫 Класс: {chat_title}\n\n"
+        f"Вопрос по учёбе #{q.id}\n\n"
+        f"Автор: {user_name}\n"
+        f"Чат: {chat_title}\n\n"
         f"«{question_text}»\n\n"
-        f"👉 Чтобы помочь, нажмите 'Ответить' (Reply) на это сообщение!"
+        f"Чтобы помочь, нажмите «Ответить» (Reply) на это сообщение!"
     )
     await event.message.answer(text=card_text, attachments=[kb.as_markup()])
 
@@ -279,7 +270,7 @@ async def on_generic_message(event: MessageCreated):
             return
 
         if helper_id == question.author_max_id:
-            await event.message.reply(text="Вы не можете отвечать на свой собственный вопрос! 😊")
+            await event.message.reply(text="Вы не можете отвечать на свой собственный вопрос.")
             return
 
         await ensure_user_and_chat(session, user_id=helper_id, display_name=helper_name, chat_id=chat_id, chat_title=chat_title)
@@ -296,21 +287,21 @@ async def on_generic_message(event: MessageCreated):
         await session.commit()
         await session.refresh(ans)
 
-        print(f"[БОТ] Ответ на вопрос #{question.id} от {helper_name}: «{raw_text}»")
+        print(f"[БОТ] Ответ на вопрос #{question.id} от {helper_name}")
 
     author_target = int(question.author_max_id) if question.author_max_id.isdigit() else question.author_max_id
     approval_kb = build_approval_keyboard(ans.id)
     dm_text = (
-        f"🤝 Вам ответил(а) {helper_name} на вопрос #{question.id}:\n\n"
+        f"Вам ответил(а) {helper_name} на вопрос #{question.id}:\n\n"
         f"«{raw_text}»\n\n"
         f"Помогло ли вам это объяснение?"
     )
 
     try:
         await event.bot.send_message(user_id=author_target, text=dm_text, attachments=[approval_kb.as_markup()])
-        await event.message.reply(text=f"Ответ от {helper_name} отправлен автору вопроса на подтверждение! ✅")
+        await event.message.reply(text=f"Ответ от {helper_name} отправлен автору вопроса на подтверждение.")
     except Exception:
-        await event.message.reply(text=f"Ответ от {helper_name} зафиксирован! Автору вопроса нужно открыть диалог с ботом для подтверждения.")
+        await event.message.reply(text=f"Ответ от {helper_name} принят. Автору вопроса нужно открыть диалог с ботом для подтверждения.")
 
 @dp.message_callback()
 async def on_callback_query(event: MessageCallback):
@@ -322,7 +313,7 @@ async def on_callback_query(event: MessageCallback):
 
     if payload == "noop":
         if event.callback and event.callback.callback_id:
-            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответьте реплаем на вопрос!")
+            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответьте реплаем на вопрос.")
         return
 
     if payload.startswith("help_accept:"):
@@ -339,7 +330,7 @@ async def on_callback_query(event: MessageCallback):
             question = res_q.scalar_one_or_none()
             if not question or str(question.author_max_id) != str(user_id):
                 if event.callback and event.callback.callback_id:
-                    await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Только автор вопроса может подтвердить помощь!")
+                    await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Только автор вопроса может подтвердить помощь.")
                 return
 
             await GamificationService.award_gratitude(
@@ -350,19 +341,19 @@ async def on_callback_query(event: MessageCallback):
                 helper_id=answer.author_max_id,
             )
 
-            print(f"[БОТ] Помощь подтверждена! Вопрос #{question.id} решён, {answer.author_name} получил +50 XP и +1 спасибку")
+            print(f"[БОТ] Помощь подтверждена: вопрос #{question.id}, {answer.author_name} получил +50 XP и +1 спасибку")
 
         try:
-            await event.message.edit(text=f"✅ Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку 🪙. Спасибо!")
+            await event.message.edit(text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!")
         except Exception:
             pass
 
         try:
             chat_target = int(question.group_chat_id) if question.group_chat_id.isdigit() else question.group_chat_id
             celeb_text = (
-                f"🎉 Вопрос #{question.id} успешно решён!\n"
-                f"Помог(ла): {answer.author_name} (+50 XP, +1 🪙)\n"
-                f"Автор {question.author_name} поблагодарил(а) за помощь! 👏"
+                f"Вопрос #{question.id} успешно решён!\n"
+                f"Помог(ла): {answer.author_name} (+50 XP, +1 спасибка)\n"
+                f"Автор {question.author_name} поблагодарил(а) за помощь."
             )
             await event.bot.send_message(chat_id=chat_target, text=celeb_text)
         except Exception:
@@ -382,7 +373,7 @@ async def on_callback_query(event: MessageCallback):
                 await session.commit()
 
         try:
-            await event.message.edit(text="❌ Ответ отклонён. Вопрос остаётся открытым для других одноклассников.")
+            await event.message.edit(text="Ответ отклонён. Вопрос остаётся открытым для других участников.")
         except Exception:
             pass
 
@@ -390,16 +381,14 @@ async def on_callback_query(event: MessageCallback):
             await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответ отклонён")
         return
 
-    webapp_url = f"{settings.WEBAPP_BASE_URL}?user_id={user_id}"
-    kb = build_main_menu_keyboard(webapp_url)
+    kb = build_main_menu_keyboard()
 
     if payload == "menu:ask_info":
         info_text = (
-            f"❓ Как задать вопрос классу:\n\n"
-            f"1. Откройте чат вашего класса.\n"
-            f"2. Отправьте сообщение:\n"
-            f"/ask <текст вашего вопроса>\n\n"
-            f"Бот создаст карточку с вопросом. Одноклассники смогут ответить реплаем, а вы выберете лучший ответ!"
+            f"Как задать вопрос классу:\n\n"
+            f"1. Откройте чат вашей учебной группы.\n"
+            f"2. Отправьте сообщение:\n/ask <текст вопроса>\n\n"
+            f"Бот создаст карточку с вопросом. Одноклассники смогут ответить реплаем, а вы отметите лучший ответ."
         )
         try:
             await event.message.edit(text=info_text, attachments=[kb.as_markup()])
@@ -410,19 +399,19 @@ async def on_callback_query(event: MessageCallback):
         async with async_session_factory() as session:
             res_user = await session.execute(select(User).where(User.max_user_id == user_id))
             u = res_user.scalar_one_or_none()
-            rank_name = u.rank if u else "Новичок"
+            rank_name = u.rank if u else "Любитель"
             xp_val = u.xp if u else 0
             coins_val = u.balance_spasibki if u else 0
-            role_title = "Учитель 🎓" if (u and u.role == "teacher") else "Школьник"
+            role_title = "Учитель" if (u and u.role == "teacher") else "Ученик"
 
         profile_text = (
-            f"👤 Профиль в Лиге Помощников:\n\n"
+            f"Личный профиль:\n\n"
             f"Имя: {user_name}\n"
             f"Статус: {role_title}\n"
             f"Звание: {rank_name}\n"
             f"Опыт: {xp_val} XP\n"
-            f"Баланс: {coins_val} спасибок 🪙\n\n"
-            f"Откройте WebApp для подробной статистики и достижений."
+            f"Баланс: {coins_val} спасибок\n\n"
+            f"Используйте команды и кнопки для навигации."
         )
         try:
             await event.message.edit(text=profile_text, attachments=[kb.as_markup()])
@@ -436,13 +425,11 @@ async def on_callback_query(event: MessageCallback):
             )
             leaders = leaders_res.scalars().all()
 
-        lines = ["🏆 Топ-5 помощников школы:\n"]
-        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-        for idx, leader in enumerate(leaders):
-            m = medals[idx] if idx < len(medals) else "▫️"
-            lines.append(f"{m} {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} 🪙)")
+        lines = ["Топ помощников:\n"]
+        for idx, leader in enumerate(leaders, 1):
+            lines.append(f"{idx}. {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} спасибок)")
 
-        top_text = "\n".join(lines) + "\n\nПолная таблица лидеров доступна в WebApp."
+        top_text = "\n".join(lines)
         try:
             await event.message.edit(text=top_text, attachments=[kb.as_markup()])
         except Exception:
@@ -451,15 +438,15 @@ async def on_callback_query(event: MessageCallback):
     elif payload == "menu:shop":
         async with async_session_factory() as session:
             rewards_res = await session.execute(
-                select(Reward).where(Reward.is_active == True).order_by(Reward.cost_spasibki.asc()).limit(4)
+                select(Reward).where(Reward.is_active == True).order_by(Reward.cost_spasibki.asc()).limit(5)
             )
             rewards = rewards_res.scalars().all()
 
-        lines = ["🎁 Школьная лавка наград:\n"]
+        lines = ["Доступные награды в лавке:\n"]
         for r in rewards:
-            lines.append(f"• {r.title} — 🪙 {r.cost_spasibki} спасибок")
+            lines.append(f"• {r.title} — {r.cost_spasibki} спасибок")
 
-        shop_text = "\n".join(lines) + "\n\nОбменять спасибки можно во вкладке «Лавка» в WebApp!"
+        shop_text = "\n".join(lines)
         try:
             await event.message.edit(text=shop_text, attachments=[kb.as_markup()])
         except Exception:
@@ -467,8 +454,8 @@ async def on_callback_query(event: MessageCallback):
 
     elif payload == "menu:teacher":
         teacher_text = (
-            f"🎓 Кабинет учителя\n\n"
-            f"Педагоги могут создавать классные награды, одобрять запросы школьников и вручать бейджи «Выбор учителя» прямо в WebApp."
+            f"Кабинет учителя\n\n"
+            f"Педагоги могут создавать школьные награды, одобрять запросы школьников и вручать бейдж «Выбор учителя»."
         )
         try:
             await event.message.edit(text=teacher_text, attachments=[kb.as_markup()])
