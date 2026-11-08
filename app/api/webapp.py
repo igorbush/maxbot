@@ -209,7 +209,7 @@ async def get_profile(
         questions_count = q_res.scalar_one() or 0
 
         all_students_res = await session.execute(
-            select(User).order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+            select(User).where(User.role != "teacher").order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
         )
     students = all_students_res.scalars().all()
     rank_pos = 1
@@ -270,6 +270,10 @@ async def get_profile(
             current_balance = cm_row.balance_spasibki
     elif user_chats:
         current_role = user_chats[0].role
+
+    if current_role == "teacher":
+        current_balance = 0
+        rank_pos = 0
 
     level = (current_user.xp // 100) + 1
     return UserProfileResponse(
@@ -405,7 +409,7 @@ async def get_leaderboard(
                 (func.count(Answer.id) * 50).label("week_xp"),
             )
             .join(Answer, Answer.author_max_id == User.max_user_id)
-            .where(Answer.status == "accepted", Answer.created_at >= since_dt)
+            .where(Answer.status == "accepted", Answer.created_at >= since_dt, User.role != "teacher")
         )
         if chat_id and chat_id != "all":
             weekly_query = weekly_query.join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
@@ -433,7 +437,7 @@ async def get_leaderboard(
             return LeaderboardResponse(period=period, items=items)
 
     if chat_id and chat_id != "all":
-        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id)
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
         chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
         chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
         all_time_query = (
@@ -443,6 +447,7 @@ async def get_leaderboard(
                 (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
             )
             .where(
+                User.role != "teacher",
                 or_(
                     User.max_user_id.in_(chat_user_subq),
                     User.max_user_id.in_(chat_ans_subq),
@@ -469,6 +474,7 @@ async def get_leaderboard(
     else:
         all_time_query = (
             select(User)
+            .where(User.role != "teacher")
             .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
             .offset(offset)
             .limit(limit)

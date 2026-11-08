@@ -1,6 +1,6 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlmodel import SQLModel, select, delete, or_, text
+from sqlmodel import SQLModel, select, delete, or_, not_, text
 from app.config import get_settings
 from app.database.models import (
     Achievement,
@@ -38,7 +38,7 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Освобождение от одного домашнего задания",
         "description": "Возможность не сдавать или сдать позже любое обычное домашнее задание по согласованию с учителем.",
-        "cost_spasibki": 5,
+        "cost_spasibki": 7,
         "is_active": True,
     },
     {
@@ -46,23 +46,15 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Выбор соседа по парте на неделю",
         "description": "Право выбрать соседа по парте на уроках в течение одной учебной недели.",
-        "cost_spasibki": 2,
+        "cost_spasibki": 5,
         "is_active": True,
     },
     {
         "created_by_teacher_id": "teacher_admin",
         "chat_id": None,
-        "title": "Индивидуальная консультация учителя",
+        "title": "Консультация с учителем перед проверочной",
         "description": "20 минут персонального разбора трудных тем и задач перед контрольной работой.",
-        "cost_spasibki": 1,
-        "is_active": True,
-    },
-    {
-        "created_by_teacher_id": "teacher_admin",
-        "chat_id": None,
-        "title": "Иммунитет от ответа у доски на 1 урок",
-        "description": "Возможность пропустить вызов к доске на одном уроке по вашему выбору.",
-        "cost_spasibki": 3,
+        "cost_spasibki": 4,
         "is_active": True,
     },
     {
@@ -70,47 +62,15 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Своя тема проекта",
         "description": "Право защитить проект или доклад на самостоятельно выбранную интересную тему.",
-        "cost_spasibki": 3,
+        "cost_spasibki": 6,
         "is_active": True,
     },
     {
         "created_by_teacher_id": "teacher_admin",
         "chat_id": None,
-        "title": "Право пересдачи самостоятельной работы",
-        "description": "Возможность переписать одну самостоятельную работу для повышения четвертной оценки.",
-        "cost_spasibki": 4,
-        "is_active": True,
-    },
-    {
-        "created_by_teacher_id": "teacher_admin",
-        "chat_id": None,
-        "title": "Дополнительный балл к проверочной",
-        "description": "Плюс один балл к итоговой оценке за одну проверочную работу в четверти.",
-        "cost_spasibki": 5,
-        "is_active": True,
-    },
-    {
-        "created_by_teacher_id": "teacher_admin",
-        "chat_id": None,
-        "title": "Ассистент учителя на уроке",
-        "description": "Помощь педагогу в подготовке интерактивных материалов и проведении урока.",
-        "cost_spasibki": 2,
-        "is_active": True,
-    },
-    {
-        "created_by_teacher_id": "teacher_admin",
-        "chat_id": None,
-        "title": "Музыкальный плейлист на перемене",
-        "description": "Право поставить подборку любимых треков на перемене.",
-        "cost_spasibki": 1,
-        "is_active": True,
-    },
-    {
-        "created_by_teacher_id": "teacher_admin",
-        "chat_id": None,
-        "title": "Диплом знатока и помощника",
-        "description": "Именная почётная грамота от учителя за активную взаимовыручку для учебного портфолио.",
-        "cost_spasibki": 5,
+        "title": "Иммунитет от ответа у доски на 1 урок",
+        "description": "Возможность пропустить вызов к доске на одном уроке по вашему выбору.",
+        "cost_spasibki": 6,
         "is_active": True,
     },
 ]
@@ -120,20 +80,41 @@ async def init_db():
         await conn.run_sync(SQLModel.metadata.create_all)
 
     async with async_session_factory() as session:
-        res = await session.execute(select(Achievement).limit(1))
-        if res.scalar_one_or_none() is None:
-            for item in DEFAULT_ACHIEVEMENTS:
+        for item in DEFAULT_ACHIEVEMENTS:
+            ach_res = await session.execute(select(Achievement).where(Achievement.code == item["code"]))
+            ach_obj = ach_res.scalar_one_or_none()
+            if not ach_obj:
                 session.add(Achievement(**item))
+            else:
+                ach_obj.icon_url = item.get("icon_url")
+                ach_obj.name_ru = item["name_ru"]
+                ach_obj.description_ru = item["description_ru"]
 
-        rew_res = await session.execute(select(Reward).limit(1))
-        if rew_res.scalar_one_or_none() is None:
-            for r in READY_REWARDS:
+        keep_titles = [r["title"] for r in READY_REWARDS]
+        await session.execute(
+            delete(Reward).where(
+                Reward.created_by_teacher_id == "teacher_admin",
+                Reward.chat_id.is_(None),
+                not_(Reward.title.in_(keep_titles)),
+            )
+        )
+        for r in READY_REWARDS:
+            existing_r_res = await session.execute(
+                select(Reward).where(
+                    Reward.created_by_teacher_id == "teacher_admin",
+                    Reward.chat_id.is_(None),
+                    Reward.title == r["title"],
+                )
+            )
+            existing_r = existing_r_res.scalar_one_or_none()
+            if not existing_r:
                 session.add(Reward(**r))
-        else:
-            existing_rewards = (await session.execute(select(Reward))).scalars().all()
-            for r in existing_rewards:
-                if r.cost_spasibki > 10:
-                    r.cost_spasibki = max(1, r.cost_spasibki // 10)
+            else:
+                existing_r.cost_spasibki = r["cost_spasibki"]
+                existing_r.description = r["description"]
+
+        await session.execute(text("UPDATE chat_members SET balance_spasibki = 0 WHERE role = 'teacher'"))
+        await session.execute(text("UPDATE users SET balance_spasibki = 0 WHERE role IN ('teacher', 'admin')"))
 
         dummy_user_ids = ["1001", "1002", "1003", "1004", "1005", "9999", "teacher_1", "student_demo", "test_user"]
         await session.execute(delete(ChatMember).where(ChatMember.user_max_id.in_(dummy_user_ids)))
@@ -164,6 +145,8 @@ async def init_db():
 
         teacher_ids_subq = select(User.max_user_id).where(User.role.in_(["teacher", "admin"]))
         await session.execute(delete(RewardClaim).where(RewardClaim.student_max_id.in_(teacher_ids_subq)))
+        await session.execute(text("UPDATE chat_members SET balance_spasibki = 0 WHERE role = 'teacher'"))
+        await session.execute(text("UPDATE users SET balance_spasibki = 0 WHERE role IN ('teacher', 'admin')"))
 
         dialog_subq = select(Chat.max_chat_id).where(
             or_(

@@ -202,16 +202,16 @@ async function loadProfile() {
     document.getElementById("header-coins").textContent = data.balance_spasibki;
     document.getElementById("header-avatar").textContent = getInitials(data.display_name);
 
-    document.getElementById("profile-level-title").textContent = data.rank;
-    document.getElementById("profile-level-num").textContent = `${data.level} уровень`;
+    document.getElementById("profile-level-title").textContent = data.role === "teacher" ? "Преподаватель" : data.rank;
+    document.getElementById("profile-level-num").textContent = data.role === "teacher" ? "Наставник" : `${data.level} уровень`;
 
     const xpInLevel = data.xp % 100;
-    document.getElementById("profile-xp-text").textContent = `${xpInLevel} / 100 XP (${data.xp} всего)`;
-    document.getElementById("profile-xp-fill").style.width = `${Math.min(100, xpInLevel)}%`;
+    document.getElementById("profile-xp-text").textContent = data.role === "teacher" ? "Вне игрового рейтинга" : `${xpInLevel} / 100 XP (${data.xp} всего)`;
+    document.getElementById("profile-xp-fill").style.width = data.role === "teacher" ? "100%" : `${Math.min(100, xpInLevel)}%`;
 
     document.getElementById("profile-helped").textContent = data.helped_count || 0;
     document.getElementById("profile-questions").textContent = data.questions_count || 0;
-    document.getElementById("profile-rank").textContent = `#${data.rank_position || 1}`;
+    document.getElementById("profile-rank").textContent = data.role === "teacher" ? "—" : `#${data.rank_position || 1}`;
 
     const shopCoins = document.getElementById("shop-coins");
     if (shopCoins) shopCoins.textContent = data.balance_spasibki;
@@ -397,6 +397,23 @@ async function loadLeaderboard() {
   }
 }
 
+const ACHIEVEMENT_THEMES = {
+  first_step: { icon: "🎯", bg: "linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%)", glow: "rgba(255, 65, 108, 0.4)" },
+  fast_aid: { icon: "⚡️", bg: "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)", glow: "rgba(247, 151, 30, 0.45)" },
+  rescuer: { icon: "🛟", bg: "linear-gradient(135deg, #00b4db 0%, #0083b0 100%)", glow: "rgba(0, 180, 219, 0.4)" },
+  marathoner: { icon: "🏃‍♂️", bg: "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)", glow: "rgba(56, 239, 125, 0.4)" },
+  week_streak: { icon: "🔥", bg: "linear-gradient(135deg, #f12711 0%, #f5af19 100%)", glow: "rgba(241, 39, 17, 0.45)" },
+  mentor: { icon: "🧠", bg: "linear-gradient(135deg, #8a2387 0%, #e94057 50%, #f27121 100%)", glow: "rgba(233, 64, 87, 0.45)" },
+  subject_expert: { icon: "📐", bg: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)", glow: "rgba(79, 172, 254, 0.4)" },
+  universal: { icon: "🌐", bg: "linear-gradient(135deg, #654ea3 0%, #eaafc8 100%)", glow: "rgba(101, 78, 163, 0.4)" },
+  class_legend: { icon: "👑", bg: "linear-gradient(135deg, #f39c12 0%, #f1c40f 100%)", glow: "rgba(243, 156, 18, 0.5)" },
+  brave_question: { icon: "🙋‍♂️", bg: "linear-gradient(135deg, #36d1dc 0%, #5b86e5 100%)", glow: "rgba(91, 134, 229, 0.4)" },
+  curious: { icon: "🔍", bg: "linear-gradient(135deg, #0ba360 0%, #3cba92 100%)", glow: "rgba(60, 186, 146, 0.4)" },
+  grateful: { icon: "🤝", bg: "linear-gradient(135deg, #e17055 0%, #fab1a0 100%)", glow: "rgba(225, 112, 85, 0.4)" },
+  week_leader: { icon: "🏆", bg: "linear-gradient(135deg, #f6d365 0%, #fda085 100%)", glow: "rgba(246, 211, 101, 0.5)" },
+  teacher_choice: { icon: "⭐️", bg: "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)", glow: "rgba(161, 140, 209, 0.45)" },
+};
+
 async function loadAchievements() {
   const container = document.getElementById("achievements-container");
   container.innerHTML = '<div class="state-loading">Загрузка достижений...</div>';
@@ -422,13 +439,20 @@ async function loadAchievements() {
         statusTag = `<span class="ach-tag tag-locked">Не открыто</span>`;
       }
 
+      const theme = ACHIEVEMENT_THEMES[ach.code] || {
+        icon: ach.icon_url || "🏅",
+        bg: "linear-gradient(135deg, #2d78f0 0%, #70a7ff 100%)",
+        glow: "rgba(45, 120, 240, 0.35)",
+      };
+
+      const iconContent = (ach.icon_url && (ach.icon_url.startsWith("http") || ach.icon_url.startsWith("/")))
+        ? `<img src="${escapeHtml(ach.icon_url)}" class="ach-custom-img" alt="">`
+        : `<span class="ach-emoji">${theme.icon}</span>`;
+
       return `
         <div class="ach-item-card ${isUnlocked ? 'unlocked' : 'locked'}">
-          <div class="ach-icon-circle">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="8" r="7"/>
-              <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>
-            </svg>
+          <div class="ach-icon-circle" style="background: ${theme.bg}; box-shadow: 0 4px 12px ${isUnlocked ? theme.glow : 'transparent'};">
+            ${iconContent}
           </div>
           <div class="ach-title">${escapeHtml(ach.name_ru)}</div>
           <div class="ach-desc">${escapeHtml(ach.description_ru)}</div>
@@ -712,7 +736,7 @@ async function handleCreateReward(e) {
     if (!res.ok) throw new Error("Ошибка публикации");
     showToast("Награда добавлена в лавку!");
     document.getElementById("create-reward-form").reset();
-    document.getElementById("rew-price").value = 3;
+    document.getElementById("rew-price").value = 5;
     loadRewards();
     loadTeacherRewards();
 

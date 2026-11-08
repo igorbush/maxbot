@@ -43,6 +43,7 @@ async def fetch_user_chat_balances(session, bot: Optional[Bot], user_id: str) ->
         .join(ChatMember, Chat.max_chat_id == ChatMember.chat_max_id)
         .where(
             ChatMember.user_max_id == user_id,
+            ChatMember.role != "teacher",
             Chat.title != "Диалог",
             not_(Chat.title.ilike("%диалог%")),
         )
@@ -126,9 +127,9 @@ async def ensure_user_and_chat(
             max_user_id=user_id,
             display_name=display_name,
             role="teacher" if is_teacher else "student",
-            balance_spasibki=10,
-            xp=100,
-            rank="Любитель",
+            balance_spasibki=0 if is_teacher else 10,
+            xp=0 if is_teacher else 100,
+            rank="Учитель" if is_teacher else "Любитель",
         )
         session.add(user)
     else:
@@ -136,6 +137,7 @@ async def ensure_user_and_chat(
             user.display_name = display_name
         if is_teacher and user.role != "teacher":
             user.role = "teacher"
+            user.balance_spasibki = 0
 
     if is_group and chat_id and chat_title and chat_title.lower() != "диалог":
         res_chat = await session.execute(select(Chat).where(Chat.max_chat_id == chat_id))
@@ -163,12 +165,13 @@ async def ensure_user_and_chat(
                 chat_max_id=chat_id,
                 user_max_id=user_id,
                 role=member_role,
-                balance_spasibki=5,
+                balance_spasibki=0 if member_role == "teacher" else 5,
             )
             session.add(member_row)
         else:
-            if is_teacher and member_row.role != "teacher":
+            if is_teacher:
                 member_row.role = "teacher"
+                member_row.balance_spasibki = 0
 
     await session.commit()
     return user
@@ -199,7 +202,7 @@ async def on_bot_added(event: BotAdded):
                     select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == owner_id)
                 )
                 if not res_m.scalar_one_or_none():
-                    session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher", balance_spasibki=5))
+                    session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher", balance_spasibki=0))
 
             try:
                 admin_res = await event.bot.get_list_admin_chat(event.chat_id)
@@ -210,18 +213,20 @@ async def on_bot_added(event: BotAdded):
                         u_res = await session.execute(select(User).where(User.max_user_id == adm_id))
                         adm_u = u_res.scalar_one_or_none()
                         if not adm_u:
-                            session.add(User(max_user_id=adm_id, display_name=adm_name, role="teacher", balance_spasibki=10, xp=100))
+                            session.add(User(max_user_id=adm_id, display_name=adm_name, role="teacher", balance_spasibki=0, xp=0, rank="Учитель"))
                         else:
                             adm_u.role = "teacher"
+                            adm_u.balance_spasibki = 0
 
                         res_adm_m = await session.execute(
                             select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == adm_id)
                         )
                         adm_m = res_adm_m.scalar_one_or_none()
                         if not adm_m:
-                            session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher", balance_spasibki=5))
+                            session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher", balance_spasibki=0))
                         else:
                             adm_m.role = "teacher"
+                            adm_m.balance_spasibki = 0
             except Exception:
                 pass
 
@@ -374,7 +379,11 @@ async def on_top_command(event: MessageCreated):
         leaders_res = await session.execute(
             select(User, ChatMember.balance_spasibki)
             .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
-            .where(ChatMember.chat_max_id == chat_id)
+            .where(
+                ChatMember.chat_max_id == chat_id,
+                ChatMember.role != "teacher",
+                User.role != "teacher",
+            )
             .order_by(User.xp.desc(), ChatMember.balance_spasibki.desc(), User.id.asc())
             .limit(10)
         )
@@ -592,6 +601,31 @@ async def on_generic_message(event: MessageCreated):
             )
             return
 
+        target_chat = question.group_chat_id or chat_id
+        is_helper_teacher = False
+        if target_chat and helper_id:
+            cm_check = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == target_chat,
+                    ChatMember.user_max_id == helper_id,
+                )
+            )
+            cm_row = cm_check.scalar_one_or_none()
+            if cm_row and cm_row.role in ("teacher", "admin"):
+                is_helper_teacher = True
+
+        if not is_helper_teacher and helper_id:
+            u_check = await session.execute(select(User).where(User.max_user_id == helper_id))
+            u_row = u_check.scalar_one_or_none()
+            if u_row and u_row.role in ("teacher", "admin"):
+                is_helper_teacher = True
+
+        if is_helper_teacher:
+            await event.message.reply(
+                text="Преподаватели находятся вне игрового рейтинга и не участвуют в начислении баллов за ответы."
+            )
+            return
+
         await ensure_user_and_chat(
             session,
             user_id=helper_id,
@@ -712,9 +746,10 @@ async def on_callback_query(event: MessageCallback):
                 helper_res = await session.execute(select(User).where(User.max_user_id == answer.author_max_id))
                 helper = helper_res.scalar_one_or_none()
                 if helper is not None:
-                    helper.balance_spasibki += 1
-                    helper.xp += 50
-                    helper.rank = GamificationService.calculate_rank(helper.xp)
+                    if helper.role not in ("teacher", "admin"):
+                        helper.balance_spasibki += 1
+                        helper.xp += 50
+                        helper.rank = GamificationService.calculate_rank(helper.xp)
                 else:
                     helper = User(
                         max_user_id=answer.author_max_id,
@@ -735,7 +770,8 @@ async def on_callback_query(event: MessageCallback):
                     )
                     cm_obj = cm_res.scalar_one_or_none()
                     if cm_obj is not None:
-                        cm_obj.balance_spasibki += 1
+                        if cm_obj.role != "teacher":
+                            cm_obj.balance_spasibki += 1
                     else:
                         session.add(
                             ChatMember(
