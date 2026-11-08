@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#edeef0" id="meta-theme-color">
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -21,10 +21,11 @@
             <h1 class="header-name" id="header-name">Загрузка...</h1>
             <span class="role-badge" id="header-role">Ученик</span>
           </div>
-          <button class="class-picker-btn" id="class-picker-trigger" onclick="openClassModal()">
-            <svg class="icon-inline" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/>
+          <button class="class-picker-btn" id="class-picker-trigger" onclick="openClassModal()" title="Выбрать учебный чат">
+            <svg class="icon-inline" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
+            <span class="class-picker-prefix">Чат:</span>
             <span id="current-class-label">Учебный чат</span>
             <span class="picker-arrow">▾</span>
           </button>
@@ -237,7 +238,7 @@
           <div class="form-row-compact">
             <div class="form-field flex-1">
               <label class="field-label">Стоимость (спасибки)</label>
-              <input type="number" id="rew-price" class="sferum-input" value="30" min="1" max="500" required>
+              <input type="number" id="rew-price" class="sferum-input" value="3" min="1" max="500" required>
             </div>
             <div class="form-field flex-1">
               <label class="field-label">Для какого чата</label>
@@ -321,6 +322,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

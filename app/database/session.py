@@ -38,7 +38,7 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Освобождение от одного домашнего задания",
         "description": "Возможность не сдавать или сдать позже любое обычное домашнее задание по согласованию с учителем.",
-        "cost_spasibki": 50,
+        "cost_spasibki": 5,
         "is_active": True,
     },
     {
@@ -46,7 +46,7 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Выбор соседа по парте на неделю",
         "description": "Право выбрать соседа по парте на уроках в течение одной учебной недели.",
-        "cost_spasibki": 35,
+        "cost_spasibki": 2,
         "is_active": True,
     },
     {
@@ -54,7 +54,7 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Индивидуальная консультация учителя",
         "description": "20 минут персонального разбора трудных тем и задач перед контрольной работой.",
-        "cost_spasibki": 25,
+        "cost_spasibki": 1,
         "is_active": True,
     },
     {
@@ -62,15 +62,15 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Иммунитет от ответа у доски на 1 урок",
         "description": "Возможность пропустить вызов к доске на одном уроке по вашему выбору.",
-        "cost_spasibki": 40,
+        "cost_spasibki": 3,
         "is_active": True,
     },
     {
         "created_by_teacher_id": "teacher_admin",
         "chat_id": None,
-        "title": "Своя тема школьного проекта",
+        "title": "Своя тема проекта",
         "description": "Право защитить проект или доклад на самостоятельно выбранную интересную тему.",
-        "cost_spasibki": 30,
+        "cost_spasibki": 3,
         "is_active": True,
     },
     {
@@ -78,7 +78,7 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Право пересдачи самостоятельной работы",
         "description": "Возможность переписать одну самостоятельную работу для повышения четвертной оценки.",
-        "cost_spasibki": 45,
+        "cost_spasibki": 4,
         "is_active": True,
     },
     {
@@ -86,7 +86,7 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Дополнительный балл к проверочной",
         "description": "Плюс один балл к итоговой оценке за одну проверочную работу в четверти.",
-        "cost_spasibki": 60,
+        "cost_spasibki": 5,
         "is_active": True,
     },
     {
@@ -94,23 +94,23 @@ READY_REWARDS = [
         "chat_id": None,
         "title": "Ассистент учителя на уроке",
         "description": "Помощь педагогу в подготовке интерактивных материалов и проведении урока.",
-        "cost_spasibki": 20,
+        "cost_spasibki": 2,
         "is_active": True,
     },
     {
         "created_by_teacher_id": "teacher_admin",
         "chat_id": None,
         "title": "Музыкальный плейлист на перемене",
-        "description": "Право поставить подборку любимых треков на перемене в классе.",
-        "cost_spasibki": 15,
+        "description": "Право поставить подборку любимых треков на перемене.",
+        "cost_spasibki": 1,
         "is_active": True,
     },
     {
         "created_by_teacher_id": "teacher_admin",
         "chat_id": None,
-        "title": "Диплом знатока и помощника школы",
-        "description": "Именная почётная грамота от учителя за активную взаимовыручку для школьного портфолио.",
-        "cost_spasibki": 70,
+        "title": "Диплом знатока и помощника",
+        "description": "Именная почётная грамота от учителя за активную взаимовыручку для учебного портфолио.",
+        "cost_spasibki": 5,
         "is_active": True,
     },
 ]
@@ -129,6 +129,11 @@ async def init_db():
         if rew_res.scalar_one_or_none() is None:
             for r in READY_REWARDS:
                 session.add(Reward(**r))
+        else:
+            existing_rewards = (await session.execute(select(Reward))).scalars().all()
+            for r in existing_rewards:
+                if r.cost_spasibki > 10:
+                    r.cost_spasibki = max(1, r.cost_spasibki // 10)
 
         dummy_user_ids = ["1001", "1002", "1003", "1004", "1005", "9999", "teacher_1", "student_demo", "test_user"]
         await session.execute(delete(ChatMember).where(ChatMember.user_max_id.in_(dummy_user_ids)))

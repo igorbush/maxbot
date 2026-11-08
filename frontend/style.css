@@ -216,30 +216,55 @@ body {
 .class-picker-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: var(--sferum-segmented-bg);
-  border: none;
-  padding: 3px 8px;
-  border-radius: var(--sferum-radius-sm);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--sferum-text-primary);
+  gap: 6px;
+  background: rgba(45, 120, 240, 0.1);
+  border: 1px solid rgba(45, 120, 240, 0.35);
+  padding: 5px 11px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sferum-blue);
   cursor: pointer;
   align-self: flex-start;
-  transition: opacity 0.15s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(45, 120, 240, 0.08);
 }
 
 .class-picker-btn:hover {
-  opacity: 0.85;
+  background: rgba(45, 120, 240, 0.18);
+  border-color: var(--sferum-blue);
+  transform: translateY(-1px);
+}
+
+.class-picker-prefix {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
 }
 
 .icon-inline {
-  color: var(--sferum-text-secondary);
+  color: var(--sferum-blue);
+  flex-shrink: 0;
 }
 
 .picker-arrow {
-  font-size: 9px;
-  color: var(--sferum-text-secondary);
+  font-size: 11px;
+  color: var(--sferum-blue);
+  font-weight: 800;
+  margin-left: 1px;
+}
+
+[data-theme="dark"] .class-picker-btn {
+  background: rgba(113, 170, 255, 0.15);
+  border-color: rgba(113, 170, 255, 0.4);
+  color: #71aaff;
+}
+
+[data-theme="dark"] .class-picker-btn .icon-inline,
+[data-theme="dark"] .class-picker-btn .picker-arrow {
+  color: #71aaff;
 }
 
 .header-right {
@@ -798,6 +823,30 @@ body {
   font-weight: 700;
   color: var(--sferum-gold);
   margin-top: 1px;
+}
+
+.reward-tag-self {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7e22ce;
+  background: rgba(126, 34, 206, 0.12);
+  border: 1px solid rgba(126, 34, 206, 0.25);
+  padding: 5px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.reward-tag-teacher {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sferum-text-secondary);
+  background: var(--sferum-segmented-bg);
+  border: 1px solid var(--sferum-border);
+  padding: 5px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
 }
 
 .my-claims-card {

@@ -219,10 +219,14 @@ async function loadProfile() {
       selectedChatTitle = "Мой учебный чат";
     }
 
+    const isTeacherInChat = (data.role === "teacher");
     const teacherNavBtn = document.getElementById("nav-teacher-btn");
-    const hasTeacherRole = (data.role === "teacher" || availableChats.some(c => c.role === "teacher"));
     if (teacherNavBtn) {
-      teacherNavBtn.style.display = hasTeacherRole ? "flex" : "none";
+      teacherNavBtn.style.display = isTeacherInChat ? "flex" : "none";
+    }
+    const teacherTab = document.getElementById("tab-teacher");
+    if (!isTeacherInChat && teacherTab && teacherTab.classList.contains("active")) {
+      switchTab("profile", document.querySelector(".bottom-tabbar .tab-item"));
     }
 
     updateClassSelectorUI();
@@ -273,17 +277,25 @@ function selectClass(chatId, chatTitle) {
   selectedChatTitle = chatTitle;
 
   const chatObj = availableChats.find(c => c.id === chatId);
-  if (chatObj) {
-    const roleElem = document.getElementById("header-role");
-    if (roleElem) {
-      if (chatObj.role === "teacher") {
-        roleElem.textContent = "Учитель";
-        roleElem.classList.add("teacher");
-      } else {
-        roleElem.textContent = "Ученик";
-        roleElem.classList.remove("teacher");
-      }
+  const isTeacher = chatObj ? (chatObj.role === "teacher") : false;
+  const roleElem = document.getElementById("header-role");
+  if (roleElem) {
+    if (isTeacher) {
+      roleElem.textContent = "Учитель";
+      roleElem.classList.add("teacher");
+    } else {
+      roleElem.textContent = "Ученик";
+      roleElem.classList.remove("teacher");
     }
+  }
+
+  const teacherNavBtn = document.getElementById("nav-teacher-btn");
+  if (teacherNavBtn) {
+    teacherNavBtn.style.display = isTeacher ? "flex" : "none";
+  }
+  const teacherTab = document.getElementById("tab-teacher");
+  if (!isTeacher && teacherTab && teacherTab.classList.contains("active")) {
+    switchTab("profile", document.querySelector(".bottom-tabbar .tab-item"));
   }
 
   updateClassSelectorUI();
@@ -460,18 +472,36 @@ async function loadRewards() {
     if (!rewards.length) {
       container.innerHTML = '<p class="empty-state-text">В лавке пока нет доступных наград.</p>';
     } else {
-      container.innerHTML = rewards.map(r => `
-        <div class="reward-card-item">
-          <div class="reward-main-col">
-            <div class="reward-item-title">${escapeHtml(r.title)}</div>
-            <div class="reward-item-desc">${escapeHtml(r.description)}</div>
-            <div class="reward-cost-tag">${r.cost_spasibki} спасибок</div>
+      const chatObj = availableChats.find(c => c.id === selectedChatId);
+      const isTeacherInChat = Boolean(
+        (currentUserData && currentUserData.role === "teacher") ||
+        (chatObj && chatObj.role === "teacher")
+      );
+
+      container.innerHTML = rewards.map(r => {
+        const isOwnReward = Boolean(r.created_by_teacher_id && String(r.created_by_teacher_id) === String(currentUserId));
+        let actionBtnHtml = "";
+        if (isOwnReward) {
+          actionBtnHtml = '<span class="reward-tag-self">Создано вами</span>';
+        } else if (isTeacherInChat) {
+          actionBtnHtml = '<span class="reward-tag-teacher">Для учеников</span>';
+        } else {
+          actionBtnHtml = `<button class="sferum-btn btn-primary" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>`;
+        }
+
+        return `
+          <div class="reward-card-item">
+            <div class="reward-main-col">
+              <div class="reward-item-title">${escapeHtml(r.title)}</div>
+              <div class="reward-item-desc">${escapeHtml(r.description)}</div>
+              <div class="reward-cost-tag">${r.cost_spasibki} спасибок</div>
+            </div>
+            <div>
+              ${actionBtnHtml}
+            </div>
           </div>
-          <div>
-            <button class="sferum-btn btn-primary" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>
-          </div>
-        </div>
-      `).join("");
+        `;
+      }).join("");
     }
 
     loadMyClaims();

@@ -151,24 +151,64 @@ async def get_profile(
         for ach, awarded_at in res.all()
     ]
 
-    h_res = await session.execute(
-        select(func.count(Answer.id)).where(
-            Answer.author_max_id == current_user.max_user_id,
-            Answer.status == "accepted",
+    if chat_id and chat_id != "all":
+        h_res = await session.execute(
+            select(func.count(Answer.id))
+            .join(Question, Answer.question_id == Question.id)
+            .where(
+                Answer.author_max_id == current_user.max_user_id,
+                Answer.status == "accepted",
+                Question.group_chat_id == chat_id,
+            )
         )
-    )
-    helped_count = h_res.scalar_one() or 0
+        helped_count = h_res.scalar_one() or 0
 
-    q_res = await session.execute(
-        select(func.count(Question.id)).where(
-            Question.author_max_id == current_user.max_user_id
+        q_res = await session.execute(
+            select(func.count(Question.id)).where(
+                Question.author_max_id == current_user.max_user_id,
+                Question.group_chat_id == chat_id,
+            )
         )
-    )
-    questions_count = q_res.scalar_one() or 0
+        questions_count = q_res.scalar_one() or 0
 
-    all_students_res = await session.execute(
-        select(User).order_by(User.xp.desc(), User.id.asc())
-    )
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id)
+        chat_ans_subq = (
+            select(Answer.author_max_id)
+            .join(Question, Answer.question_id == Question.id)
+            .where(Question.group_chat_id == chat_id)
+        )
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+        all_students_res = await session.execute(
+            select(User)
+            .where(
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
+                    User.max_user_id == current_user.max_user_id,
+                )
+            )
+            .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+        )
+    else:
+        h_res = await session.execute(
+            select(func.count(Answer.id)).where(
+                Answer.author_max_id == current_user.max_user_id,
+                Answer.status == "accepted",
+            )
+        )
+        helped_count = h_res.scalar_one() or 0
+
+        q_res = await session.execute(
+            select(func.count(Question.id)).where(
+                Question.author_max_id == current_user.max_user_id
+            )
+        )
+        questions_count = q_res.scalar_one() or 0
+
+        all_students_res = await session.execute(
+            select(User).order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+        )
     students = all_students_res.scalars().all()
     rank_pos = 1
     for idx, s in enumerate(students, 1):
@@ -399,12 +439,14 @@ async def get_leaderboard(
     if chat_id and chat_id != "all":
         chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id)
         chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
         all_time_query = (
             select(User)
             .where(
                 or_(
                     User.max_user_id.in_(chat_user_subq),
                     User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
                 )
             )
             .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())

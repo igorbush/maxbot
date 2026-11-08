@@ -57,6 +57,26 @@ class TeacherService:
         if not reward.is_active:
             raise ValueError("Reward is inactive")
 
+        if reward.created_by_teacher_id and str(reward.created_by_teacher_id) == str(student_max_id):
+            raise ValueError("Преподаватель не может обменивать созданные им награды")
+
+        target_chat = chat_id or reward.chat_id
+        if target_chat and target_chat != "all":
+            mem_teacher = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == target_chat,
+                    ChatMember.user_max_id == student_max_id,
+                    ChatMember.role == "teacher",
+                )
+            )
+            if mem_teacher.scalars().first() is not None:
+                raise ValueError("Преподаватель не может обменивать награды в своем учебном чате")
+            chat_owner = await session.execute(
+                select(Chat).where(Chat.max_chat_id == target_chat, Chat.owner_id == student_max_id)
+            )
+            if chat_owner.scalars().first() is not None:
+                raise ValueError("Преподаватель не может обменивать награды в своем учебном чате")
+
         if student.balance_spasibki < reward.cost_spasibki:
             raise ValueError("Недостаточно спасибок для обмена")
 
@@ -103,6 +123,8 @@ class TeacherService:
             raise ValueError("Reward claim not found")
         if claim.status != "requested":
             raise ValueError("Reward claim is already processed")
+        if claim.student_max_id and str(claim.student_max_id) == str(teacher_max_id):
+            raise ValueError("Преподаватель не может рассматривать собственные заявки")
 
         if decision not in ("approved", "rejected", "approve", "reject"):
             raise ValueError("Invalid decision status")

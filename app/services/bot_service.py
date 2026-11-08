@@ -9,7 +9,7 @@ from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 from app.config import get_settings
 from app.database.session import async_session_factory
-from app.database.models import User, Chat, ChatMember, Question, Answer, Reward
+from app.database.models import User, Chat, ChatMember, Question, Answer, Reward, RewardClaim
 from app.services.gamification import GamificationService
 
 settings = get_settings()
@@ -29,14 +29,17 @@ def extract_display_name(user) -> str:
     user_id = getattr(user, "user_id", "")
     return f"Участник {user_id}"
 
-def build_main_menu_keyboard():
+def build_main_menu_keyboard(is_teacher: bool = False):
     builder = InlineKeyboardBuilder()
     builder.add(CallbackButton(text="❓ Как спросить?", payload="menu:ask_info"))
     builder.add(CallbackButton(text="👤 Мой профиль", payload="menu:profile"))
     builder.add(CallbackButton(text="🏆 Рейтинг", payload="menu:top"))
     builder.add(CallbackButton(text="🎁 Лавка наград", payload="menu:shop"))
-    builder.add(CallbackButton(text="🎓 Кабинет учителя", payload="menu:teacher"))
-    builder.adjust(2, 2, 1)
+    if is_teacher:
+        builder.add(CallbackButton(text="🎓 Кабинет учителя", payload="menu:teacher"))
+        builder.adjust(2, 2, 1)
+    else:
+        builder.adjust(2, 2)
     return builder
 
 async def send_response_or_dm(event: MessageCreated, text: str, kb=None, is_group: bool = False):
@@ -190,10 +193,19 @@ async def on_bot_started(event: BotStarted):
     user_name = extract_display_name(event.from_user)
     print(f"[БОТ] Бот запущен пользователем {user_name} (ID: {user_id})")
 
+    is_teacher = False
     async with async_session_factory() as session:
-        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, is_group=False)
+        u = await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, is_group=False)
+        if u and u.role in ("teacher", "admin"):
+            is_teacher = True
+        else:
+            cm_res = await session.execute(
+                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
+            )
+            if cm_res.scalars().first():
+                is_teacher = True
 
-    kb = build_main_menu_keyboard()
+    kb = build_main_menu_keyboard(is_teacher=is_teacher)
     text = (
         f"Здравствуйте, {user_name}!\n\n"
         f"«Лига Помощников» — бот взаимопомощи в мессенджере MAX.\n\n"
@@ -219,8 +231,9 @@ async def on_start_command(event: MessageCreated):
 
     print(f"[БОТ] Команда /start от {user_name} (ID: {user_id})")
 
+    is_teacher = False
     async with async_session_factory() as session:
-        await ensure_user_and_chat(
+        u = await ensure_user_and_chat(
             session,
             user_id=user_id,
             display_name=user_name,
@@ -229,8 +242,16 @@ async def on_start_command(event: MessageCreated):
             owner_id=owner_id,
             is_group=is_group,
         )
+        if u and u.role in ("teacher", "admin"):
+            is_teacher = True
+        else:
+            cm_res = await session.execute(
+                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
+            )
+            if cm_res.scalars().first():
+                is_teacher = True
 
-    kb = build_main_menu_keyboard()
+    kb = build_main_menu_keyboard(is_teacher=is_teacher)
     text = (
         f"Здравствуйте, {user_name}!\n\n"
         f"Лига Помощников готова к работе. Выберите действие на клавиатуре бота:"
@@ -245,7 +266,20 @@ async def on_help_command(event: MessageCreated):
     is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
     print(f"[БОТ] Команда /help от {user_name}")
 
-    kb = build_main_menu_keyboard()
+    is_teacher = False
+    async with async_session_factory() as session:
+        res = await session.execute(select(User).where(User.max_user_id == user_id))
+        user = res.scalar_one_or_none()
+        if user and user.role in ("teacher", "admin"):
+            is_teacher = True
+        else:
+            cm_res = await session.execute(
+                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
+            )
+            if cm_res.scalars().first():
+                is_teacher = True
+
+    kb = build_main_menu_keyboard(is_teacher=is_teacher)
     text = (
         f"Инструкция по работе с Лигой Помощников:\n\n"
         f"1. Добавьте бота в ваш учебный чат.\n"
@@ -268,8 +302,14 @@ async def on_manage_command(event: MessageCreated):
         res = await session.execute(select(User).where(User.max_user_id == user_id))
         user = res.scalar_one_or_none()
         is_teacher = bool(user and user.role in ("teacher", "admin"))
+        if not is_teacher:
+            cm_res = await session.execute(
+                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
+            )
+            if cm_res.scalars().first():
+                is_teacher = True
 
-    kb = build_main_menu_keyboard()
+    kb = build_main_menu_keyboard(is_teacher=is_teacher)
 
     if is_teacher:
         text = (
@@ -640,7 +680,21 @@ async def on_callback_query(event: MessageCallback):
             await event.ack(notification="Ответ отклонён")
         return
 
-    kb = build_main_menu_keyboard()
+    is_teacher = False
+    if user_id:
+        async with async_session_factory() as session:
+            res_user = await session.execute(select(User).where(User.max_user_id == user_id))
+            u_check = res_user.scalar_one_or_none()
+            if u_check and u_check.role in ("teacher", "admin"):
+                is_teacher = True
+            else:
+                res_cm = await session.execute(
+                    select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
+                )
+                if res_cm.scalars().first():
+                    is_teacher = True
+
+    kb = build_main_menu_keyboard(is_teacher=is_teacher)
 
     if payload == "menu:ask_info":
         info_text = (
@@ -661,12 +715,10 @@ async def on_callback_query(event: MessageCallback):
             rank_name = u.rank if u else "Любитель"
             xp_val = u.xp if u else 0
             coins_val = u.balance_spasibki if u else 0
-            role_title = "Учитель" if (u and u.role == "teacher") else "Ученик"
 
         profile_text = (
             f"Личный профиль:\n\n"
             f"Имя: {user_name}\n"
-            f"Статус: {role_title}\n"
             f"Звание: {rank_name}\n"
             f"Опыт: {xp_val} XP\n"
             f"Баланс: {coins_val} спасибок\n\n"
@@ -680,11 +732,11 @@ async def on_callback_query(event: MessageCallback):
     elif payload == "menu:top":
         async with async_session_factory() as session:
             leaders_res = await session.execute(
-                select(User).where(User.role == "student").order_by(User.xp.desc()).limit(5)
+                select(User).order_by(User.xp.desc(), User.balance_spasibki.desc()).limit(5)
             )
             leaders = leaders_res.scalars().all()
 
-        lines = ["Топ помощников:\n"]
+        lines = ["🏆 Топ помощников:\n"]
         if not leaders:
             lines.append("Пока нет участников с начисленными баллами.")
         else:
@@ -698,15 +750,30 @@ async def on_callback_query(event: MessageCallback):
             await event.ack()
 
     elif payload == "menu:shop":
-        async with async_session_factory() as session:
-            rewards_res = await session.execute(
-                select(Reward).where(Reward.is_active == True).order_by(Reward.cost_spasibki.asc()).limit(5)
-            )
-            rewards = rewards_res.scalars().all()
+        user_claims = []
+        if user_id:
+            async with async_session_factory() as session:
+                claims_res = await session.execute(
+                    select(RewardClaim, Reward)
+                    .join(Reward, RewardClaim.reward_id == Reward.id)
+                    .where(RewardClaim.student_max_id == user_id)
+                    .order_by(RewardClaim.created_at.desc())
+                    .limit(3)
+                )
+                user_claims = claims_res.all()
 
-        lines = ["Доступные награды в лавке:\n"]
-        for r in rewards:
-            lines.append(f"• {r.title} — {r.cost_spasibki} спасибок")
+        lines = ["🎁 Лавка наград:\n"]
+        if user_claims:
+            lines.append("Ваши полученные и запрошенные награды:")
+            status_map = {"requested": "⏳ Ожидает учителя", "approved": "✅ Одобрено", "rejected": "❌ Отклонено"}
+            for c, r in user_claims:
+                lines.append(f"• {r.title} ({status_map.get(c.status, c.status)})")
+            lines.append("")
+        else:
+            lines.append("У вас пока нет активных запросов на награды.\n")
+
+        lines.append("Каталог бонусов и обмен спасибок доступны в приложении:")
+        lines.append(f"{settings.WEBAPP_BASE_URL}?user_id={user_id}")
 
         shop_text = "\n".join(lines)
         try:
