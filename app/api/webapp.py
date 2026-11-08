@@ -580,15 +580,19 @@ async def claim_reward(
 
 @router.get("/my-claims")
 async def get_my_claims(
+    chat_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    res = await session.execute(
+    query = (
         select(RewardClaim, Reward)
         .join(Reward, RewardClaim.reward_id == Reward.id)
         .where(RewardClaim.student_max_id == current_user.max_user_id)
-        .order_by(RewardClaim.created_at.desc())
     )
+    if chat_id and chat_id != "all":
+        query = query.where(RewardClaim.chat_id == chat_id)
+    query = query.order_by(RewardClaim.created_at.desc())
+    res = await session.execute(query)
     return [
         {
             "id": claim.id,

@@ -268,14 +268,36 @@ async function loadProfile() {
       selectedChatTitle = "Мой учебный чат";
     }
 
-    const isTeacherInChat = (data.role === "teacher");
+    const activeChat = availableChats.find(c => c.id === selectedChatId);
+    const isTeacherInChat = Boolean((activeChat && activeChat.role === "teacher") || data.role === "teacher");
+
     const teacherNavBtn = document.getElementById("nav-teacher-btn");
+    const rewardsNavBtn = document.getElementById("nav-rewards-btn");
     if (teacherNavBtn) {
       teacherNavBtn.style.display = isTeacherInChat ? "flex" : "none";
     }
+    if (rewardsNavBtn) {
+      rewardsNavBtn.style.display = isTeacherInChat ? "none" : "flex";
+    }
+
     const teacherTab = document.getElementById("tab-teacher");
+    const rewardsTab = document.getElementById("tab-rewards");
+
     if (!isTeacherInChat && teacherTab && teacherTab.classList.contains("active")) {
       switchTab("profile", document.querySelector(".bottom-tabbar .tab-item"));
+    }
+    if (isTeacherInChat && rewardsTab && rewardsTab.classList.contains("active")) {
+      switchTab("teacher", teacherNavBtn || document.querySelector(".bottom-tabbar .tab-item"));
+    }
+
+    const profileClaimsCard = document.getElementById("profile-my-claims-card");
+    if (profileClaimsCard) {
+      if (isTeacherInChat) {
+        profileClaimsCard.style.display = "none";
+      } else {
+        profileClaimsCard.style.display = "block";
+        loadMyClaims();
+      }
     }
 
     updateClassSelectorUI();
@@ -337,12 +359,30 @@ function selectClass(chatId, chatTitle) {
   }
 
   const teacherNavBtn = document.getElementById("nav-teacher-btn");
+  const rewardsNavBtn = document.getElementById("nav-rewards-btn");
   if (teacherNavBtn) {
     teacherNavBtn.style.display = isTeacher ? "flex" : "none";
   }
+  if (rewardsNavBtn) {
+    rewardsNavBtn.style.display = isTeacher ? "none" : "flex";
+  }
+
   const teacherTab = document.getElementById("tab-teacher");
+  const rewardsTab = document.getElementById("tab-rewards");
   if (!isTeacher && teacherTab && teacherTab.classList.contains("active")) {
     switchTab("profile", document.querySelector(".bottom-tabbar .tab-item"));
+  }
+  if (isTeacher && rewardsTab && rewardsTab.classList.contains("active")) {
+    switchTab("teacher", teacherNavBtn || document.querySelector(".bottom-tabbar .tab-item"));
+  }
+
+  const profileClaimsCard = document.getElementById("profile-my-claims-card");
+  if (profileClaimsCard) {
+    if (isTeacher) {
+      profileClaimsCard.style.display = "none";
+    } else {
+      profileClaimsCard.style.display = "block";
+    }
   }
 
   updateClassSelectorUI();
@@ -522,40 +562,19 @@ async function loadRewards() {
     if (!rewards.length) {
       container.innerHTML = '<p class="empty-state-text">В лавке пока нет доступных наград.</p>';
     } else {
-      const chatObj = availableChats.find(c => c.id === selectedChatId);
-      const isTeacherInChat = Boolean(
-        (currentUserData && currentUserData.role === "teacher") ||
-        (chatObj && chatObj.role === "teacher")
-      );
-
-      container.innerHTML = rewards.map(r => {
-        const isOwnReward = Boolean(r.created_by_teacher_id && String(r.created_by_teacher_id) === String(currentUserId));
-        let actionBtnHtml = "";
-        if (isOwnReward) {
-          actionBtnHtml = `<span class="reward-tag-self">Создано вами</span> <button class="sferum-btn btn-danger-sm" onclick="handleDeleteReward(${r.id})">Удалить</button>`;
-        } else if (isTeacherInChat) {
-          actionBtnHtml = `<span class="reward-tag-teacher">Для учеников</span> <button class="sferum-btn btn-danger-sm" onclick="handleDeleteReward(${r.id})">Удалить</button>`;
-        } else {
-          actionBtnHtml = `<button class="sferum-btn btn-primary" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>`;
-        }
-
-        return `
-          <div class="reward-card-item">
-            <div class="reward-main-col">
-              <div class="reward-item-title">${escapeHtml(r.title)}</div>
-              <div class="reward-item-desc">${escapeHtml(r.description)}</div>
-              <div class="reward-cost-tag">${r.cost_spasibki} спасибок</div>
-            </div>
-            <div>
-              ${actionBtnHtml}
-            </div>
+      container.innerHTML = rewards.map(r => `
+        <div class="reward-card-item">
+          <div class="reward-main-col">
+            <div class="reward-item-title">${escapeHtml(r.title)}</div>
+            <div class="reward-item-desc">${escapeHtml(r.description)}</div>
+            <div class="reward-cost-tag">${r.cost_spasibki} спасибок</div>
           </div>
-        `;
-      }).join("");
+          <div>
+            <button class="sferum-btn btn-primary" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>
+          </div>
+        </div>
+      `).join("");
     }
-
-    loadMyClaims();
-
   } catch (err) {
     container.innerHTML = '<p class="empty-state-text">Не удалось загрузить лавку</p>';
   }
@@ -563,12 +582,17 @@ async function loadRewards() {
 
 async function loadMyClaims() {
   const container = document.getElementById("my-requests-list");
+  if (!container) return;
   try {
-    const res = await fetch(`/api/my-claims?user_id=${currentUserId}`);
+    let url = `/api/my-claims?user_id=${encodeURIComponent(currentUserId)}`;
+    if (selectedChatId && selectedChatId !== "all") {
+      url += `&chat_id=${encodeURIComponent(selectedChatId)}`;
+    }
+    const res = await fetch(url);
     const claims = await res.json();
 
     if (!claims.length) {
-      container.innerHTML = '<p class="empty-state-text">У вас пока нет активных запросов.</p>';
+      container.innerHTML = '<p class="empty-state-text">У вас пока нет активных запросов на награды в этом чате.</p>';
       return;
     }
 

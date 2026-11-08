@@ -9,7 +9,7 @@
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -136,6 +136,13 @@
         </div>
         <p>Задавайте вопросы в чате через команду <code>/ask</code>. Отвечайте на вопросы одноклассников реплаем. Когда автор подтверждает ответ кнопкой «Помог», вам начисляется <b>+50 XP</b> и <b>+1 спасибка</b>.</p>
       </div>
+
+      <div class="sferum-card my-claims-card" id="profile-my-claims-card">
+        <h3 class="claims-heading">Мои награды в этом чате</h3>
+        <div id="my-requests-list" class="claims-list">
+          <p class="empty-state-text">У вас пока нет активных запросов на награды.</p>
+        </div>
+      </div>
     </section>
 
     <section id="tab-leaderboard" class="tab-pane">
@@ -188,13 +195,6 @@
       <div class="rewards-section-title">Каталог наград от учителей</div>
       <div class="rewards-grid" id="rewards-container">
         <div class="state-loading">Загрузка витрины...</div>
-      </div>
-
-      <div class="my-claims-card">
-        <h3 class="claims-heading">Мои полученные награды</h3>
-        <div id="my-requests-list" class="claims-list">
-          <p class="empty-state-text">У вас пока нет активных запросов на награды.</p>
-        </div>
       </div>
     </section>
 
@@ -354,7 +354,7 @@
       <span class="tab-text">Ачивки</span>
     </button>
 
-    <button class="tab-item" onclick="switchTab('rewards', this)">
+    <button class="tab-item" id="nav-rewards-btn" onclick="switchTab('rewards', this)">
       <div class="tab-icon">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 12 20 22 4 22 4 12"/>
@@ -392,6 +392,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=19"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>
