@@ -33,13 +33,7 @@ def build_main_menu_keyboard(is_teacher: bool = False):
     builder = InlineKeyboardBuilder()
     builder.add(CallbackButton(text="❓ Как спросить?", payload="menu:ask_info"))
     builder.add(CallbackButton(text="👤 Мой профиль", payload="menu:profile"))
-    builder.add(CallbackButton(text="🏆 Рейтинг", payload="menu:top"))
-    builder.add(CallbackButton(text="🎁 Лавка наград", payload="menu:shop"))
-    if is_teacher:
-        builder.add(CallbackButton(text="🎓 Кабинет учителя", payload="menu:teacher"))
-        builder.adjust(2, 2, 1)
-    else:
-        builder.adjust(2, 2)
+    builder.adjust(2)
     return builder
 
 async def send_response_or_dm(event: MessageCreated, text: str, kb=None, is_group: bool = False):
@@ -193,26 +187,17 @@ async def on_bot_started(event: BotStarted):
     user_name = extract_display_name(event.from_user)
     print(f"[БОТ] Бот запущен пользователем {user_name} (ID: {user_id})")
 
-    is_teacher = False
     async with async_session_factory() as session:
-        u = await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, is_group=False)
-        if u and u.role in ("teacher", "admin"):
-            is_teacher = True
-        else:
-            cm_res = await session.execute(
-                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
-            )
-            if cm_res.scalars().first():
-                is_teacher = True
+        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, is_group=False)
 
-    kb = build_main_menu_keyboard(is_teacher=is_teacher)
+    kb = build_main_menu_keyboard()
     text = (
         f"Здравствуйте, {user_name}!\n\n"
         f"«Лига Помощников» — бот взаимопомощи в мессенджере MAX.\n\n"
-        f"• Задавайте вопросы по учебе командой /ask в учебном чате.\n"
+        f"• Задавайте вопросы командой /ask в учебном чате группы.\n"
         f"• Отвечайте реплаем на вопросы одноклассников, получайте XP и спасибки.\n"
-        f"• Обменивайте спасибки на бонусы в лавке наград!\n\n"
-        f"Используйте кнопки под сообщением для быстрого управления:"
+        f"• Рейтинг класса можно посмотреть прямо в чате командой /top.\n\n"
+        f"Используйте кнопки под сообщением для просмотра профиля и справки:"
     )
     if event.chat:
         chat_target = int(event.chat.chat_id) if str(event.chat.chat_id).isdigit() else event.chat.chat_id
@@ -231,9 +216,8 @@ async def on_start_command(event: MessageCreated):
 
     print(f"[БОТ] Команда /start от {user_name} (ID: {user_id})")
 
-    is_teacher = False
     async with async_session_factory() as session:
-        u = await ensure_user_and_chat(
+        await ensure_user_and_chat(
             session,
             user_id=user_id,
             display_name=user_name,
@@ -242,16 +226,8 @@ async def on_start_command(event: MessageCreated):
             owner_id=owner_id,
             is_group=is_group,
         )
-        if u and u.role in ("teacher", "admin"):
-            is_teacher = True
-        else:
-            cm_res = await session.execute(
-                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
-            )
-            if cm_res.scalars().first():
-                is_teacher = True
 
-    kb = build_main_menu_keyboard(is_teacher=is_teacher)
+    kb = build_main_menu_keyboard()
     text = (
         f"Здравствуйте, {user_name}!\n\n"
         f"Лига Помощников готова к работе. Выберите действие на клавиатуре бота:"
@@ -260,69 +236,66 @@ async def on_start_command(event: MessageCreated):
 
 @dp.message_created(Command(["help", "help@ideya_fiks_59_bot"]))
 async def on_help_command(event: MessageCreated):
-    user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
     chat_type = getattr(event.chat, "type", "") or ""
     is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
     print(f"[БОТ] Команда /help от {user_name}")
 
-    is_teacher = False
-    async with async_session_factory() as session:
-        res = await session.execute(select(User).where(User.max_user_id == user_id))
-        user = res.scalar_one_or_none()
-        if user and user.role in ("teacher", "admin"):
-            is_teacher = True
-        else:
-            cm_res = await session.execute(
-                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
-            )
-            if cm_res.scalars().first():
-                is_teacher = True
-
-    kb = build_main_menu_keyboard(is_teacher=is_teacher)
+    kb = build_main_menu_keyboard()
     text = (
         f"Инструкция по работе с Лигой Помощников:\n\n"
         f"1. Добавьте бота в ваш учебный чат.\n"
-        f"2. Чтобы задать вопрос, напишите:\n/ask <текст вопроса>\n"
-        f"3. Чтобы помочь, ответьте реплаем (Reply) на сообщение бота с вопросом.\n"
+        f"2. Чтобы задать вопрос, напишите в группе:\n/ask <текст вопроса>\n"
+        f"3. Чтобы помочь, ответьте реплаем (Reply) на сообщение с вопросом.\n"
         f"4. Автор вопроса нажимает кнопку «Помог», и помощнику начисляется +50 XP и +1 спасибка.\n"
-        f"5. Накопленные спасибки можно обменивать на награды от учителей."
+        f"5. Команда /top в групповом чате выводит рейтинг помощников класса."
     )
     await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
-@dp.message_created(Command(["manage", "manage@ideya_fiks_59_bot"]))
-async def on_manage_command(event: MessageCreated):
-    user_id = str(event.from_user.user_id) if event.from_user else ""
-    user_name = extract_display_name(event.from_user)
+@dp.message_created(Command(["top", "top@ideya_fiks_59_bot", "rating", "rating@ideya_fiks_59_bot"]))
+async def on_top_command(event: MessageCreated):
+    chat_id = str(event.chat.chat_id) if event.chat else ""
     chat_type = getattr(event.chat, "type", "") or ""
     is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
-    print(f"[БОТ] Команда /manage от {user_name}")
+    chat_title = event.chat.title if is_group else "Учебный чат"
+
+    if not is_group:
+        await event.message.reply(
+            text="Рейтинг рассчитывается для учебных классов. Отправьте команду /top в групповом чате."
+        )
+        return
 
     async with async_session_factory() as session:
-        res = await session.execute(select(User).where(User.max_user_id == user_id))
-        user = res.scalar_one_or_none()
-        is_teacher = bool(user and user.role in ("teacher", "admin"))
-        if not is_teacher:
-            cm_res = await session.execute(
-                select(ChatMember).where(ChatMember.user_max_id == user_id, ChatMember.role == "teacher")
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id)
+        chat_ans_subq = (
+            select(Answer.author_max_id)
+            .join(Question, Answer.question_id == Question.id)
+            .where(Question.group_chat_id == chat_id)
+        )
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+        leaders_res = await session.execute(
+            select(User)
+            .where(
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
+                )
             )
-            if cm_res.scalars().first():
-                is_teacher = True
-
-    kb = build_main_menu_keyboard(is_teacher=is_teacher)
-
-    if is_teacher:
-        text = (
-            f"Кабинет учителя для {user_name}\n\n"
-            f"Вам доступно одобрение заявок учеников на награды, создание бонусов и вручение награды «Выбор учителя» (+100 XP и +20 спасибок)."
+            .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+            .limit(10)
         )
+        leaders = leaders_res.scalars().all()
+
+    lines = [f"🏆 Топ помощников чата «{chat_title}»:\n"]
+    if not leaders:
+        lines.append("В этом чате пока нет участников с начисленными баллами.")
     else:
-        text = (
-            f"Кабинет учителя\n\n"
-            f"Этот раздел предназначен для преподавателей и кураторов учебных групп."
-        )
+        for idx, leader in enumerate(leaders, 1):
+            badge = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
+            lines.append(f"{badge} {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} спасибок)")
 
-    await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
+    await event.message.reply(text="\n".join(lines))
 
 @dp.message_created(Command(["ask", "ask@ideya_fiks_59_bot"]))
 async def on_ask_command(event: MessageCreated):
@@ -746,14 +719,16 @@ async def on_callback_query(event: MessageCallback):
                 if res_cm.scalars().first():
                     is_teacher = True
 
-    kb = build_main_menu_keyboard(is_teacher=is_teacher)
+    kb = build_main_menu_keyboard()
 
     if payload == "menu:ask_info":
         info_text = (
-            f"Как задать вопрос в чате:\n\n"
-            f"1. Откройте ваш учебный чат.\n"
-            f"2. Отправьте сообщение:\n/ask <текст вопроса>\n\n"
-            f"Бот создаст карточку с вопросом. Одноклассники смогут ответить реплаем, а вы отметите лучший ответ."
+            f"Как работает взаимопомощь:\n\n"
+            f"1. Добавьте бота в ваш учебный чат.\n"
+            f"2. Чтобы задать вопрос классу, напишите в группе:\n/ask <текст вопроса>\n\n"
+            f"3. Отвечайте реплаем (Reply) на сообщение с вопросом.\n"
+            f"4. Автор подтверждает помощь кнопкой «Помог», и помощник получает +50 XP и +1 спасибку.\n\n"
+            f"5. Команда /top в групповом чате показывает рейтинг помощников класса."
         )
         try:
             await event.edit(text=info_text, attachments=[kb.as_markup()])
@@ -774,7 +749,7 @@ async def on_callback_query(event: MessageCallback):
             f"Звание: {rank_name}\n"
             f"Опыт: {xp_val} XP\n"
             f"Баланс: {coins_val} спасибок\n\n"
-            f"Используйте команды и кнопки для навигации."
+            f"Используйте веб-сервис Лиги Помощников для выбора наград и просмотра рейтинга ваших чатов."
         )
         try:
             await event.edit(text=profile_text, attachments=[kb.as_markup()])
@@ -782,52 +757,18 @@ async def on_callback_query(event: MessageCallback):
             await event.ack()
 
     elif payload == "menu:top":
-        async with async_session_factory() as session:
-            leaders_res = await session.execute(
-                select(User).order_by(User.xp.desc(), User.balance_spasibki.desc()).limit(5)
-            )
-            leaders = leaders_res.scalars().all()
-
-        lines = ["🏆 Топ помощников:\n"]
-        if not leaders:
-            lines.append("Пока нет участников с начисленными баллами.")
-        else:
-            for idx, leader in enumerate(leaders, 1):
-                lines.append(f"{idx}. {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} спасибок)")
-
-        top_text = "\n".join(lines)
+        top_text = (
+            "Рейтинг участников доступен прямо в вашем учебном чате по команде /top или в веб-сервисе Лиги Помощников."
+        )
         try:
             await event.edit(text=top_text, attachments=[kb.as_markup()])
         except Exception:
             await event.ack()
 
     elif payload == "menu:shop":
-        user_claims = []
-        if user_id:
-            async with async_session_factory() as session:
-                claims_res = await session.execute(
-                    select(RewardClaim, Reward)
-                    .join(Reward, RewardClaim.reward_id == Reward.id)
-                    .where(RewardClaim.student_max_id == user_id)
-                    .order_by(RewardClaim.created_at.desc())
-                    .limit(3)
-                )
-                user_claims = claims_res.all()
-
-        lines = ["🎁 Лавка наград:\n"]
-        if user_claims:
-            lines.append("Ваши полученные и запрошенные награды:")
-            status_map = {"requested": "⏳ Ожидает учителя", "approved": "✅ Одобрено", "rejected": "❌ Отклонено"}
-            for c, r in user_claims:
-                lines.append(f"• {r.title} ({status_map.get(c.status, c.status)})")
-            lines.append("")
-        else:
-            lines.append("У вас пока нет активных запросов на награды.\n")
-
-        lines.append("Каталог бонусов и обмен спасибок доступны в приложении:")
-        lines.append(f"{settings.WEBAPP_BASE_URL}?user_id={user_id}")
-
-        shop_text = "\n".join(lines)
+        shop_text = (
+            "Лавка наград и обмен спасибок на бонусы от преподавателей доступны в веб-сервисе Лиги Помощников."
+        )
         try:
             await event.edit(text=shop_text, attachments=[kb.as_markup()])
         except Exception:
@@ -835,8 +776,7 @@ async def on_callback_query(event: MessageCallback):
 
     elif payload == "menu:teacher":
         teacher_text = (
-            f"Кабинет учителя\n\n"
-            f"Педагоги могут создавать награды, одобрять запросы учеников и вручать бейдж «Выбор учителя»."
+            "Кабинет учителя доступен в веб-сервисе Лиги Помощников."
         )
         try:
             await event.edit(text=teacher_text, attachments=[kb.as_markup()])

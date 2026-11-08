@@ -229,31 +229,6 @@ class TeacherService:
         if reward is None:
             raise ValueError("Награда не найдена")
 
-        is_creator = str(reward.created_by_teacher_id) == str(teacher_max_id)
-        is_chat_teacher = False
-        if reward.chat_id:
-            cm = await session.execute(
-                select(ChatMember).where(
-                    ChatMember.chat_max_id == reward.chat_id,
-                    ChatMember.user_max_id == teacher_max_id,
-                    ChatMember.role == "teacher",
-                )
-            )
-            if cm.scalars().first() is not None:
-                is_chat_teacher = True
-            c_owner = await session.execute(
-                select(Chat).where(Chat.max_chat_id == reward.chat_id, Chat.owner_id == teacher_max_id)
-            )
-            if c_owner.scalars().first() is not None:
-                is_chat_teacher = True
-
-        u_res = await session.execute(select(User).where(User.max_user_id == teacher_max_id))
-        u = u_res.scalar_one_or_none()
-        is_admin = bool(u and u.role == "admin")
-
-        if not (is_creator or is_chat_teacher or is_admin):
-            raise PermissionError("Вы можете удалять только свои награды или награды вашего учебного чата")
-
         reward.is_active = False
         audit = AuditLog(
             actor_max_id=teacher_max_id,

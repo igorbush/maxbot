@@ -747,7 +747,6 @@ async function loadTeacherRewards() {
 }
 
 async function handleDeleteReward(rewardId) {
-  if (!confirm("Вы уверены, что хотите удалить эту награду?")) return;
   try {
     const res = await fetch(`/api/teacher/rewards/${rewardId}/delete`, {
       method: "POST",

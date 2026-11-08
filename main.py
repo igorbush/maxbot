@@ -23,12 +23,12 @@ async def register_bot_commands(target_bot: Bot):
     try:
         commands = [
             BotCommand(name="ask", description="Задать вопрос классу"),
+            BotCommand(name="top", description="Рейтинг помощников этого чата"),
             BotCommand(name="start", description="Главное меню и профиль"),
             BotCommand(name="help", description="Инструкция по взаимопомощи"),
-            BotCommand(name="manage", description="Кабинет учителя"),
         ]
         await target_bot.set_commands(*commands)
-        print("[БОТ] Команды бота (/ask, /start, /help, /manage) зарегистрированы в MAX API")
+        print("[БОТ] Команды бота (/ask, /top, /start, /help) зарегистрированы в MAX API")
     except Exception as e:
         print(f"[БОТ] Регистрация команд: {e}")
 
