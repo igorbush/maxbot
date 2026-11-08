@@ -994,6 +994,33 @@ body {
   outline: none;
 }
 
+.collapsible-trigger {
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  padding: 2px 0;
+}
+
+.collapsible-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.collapse-icon {
+  font-size: 13px;
+  color: var(--sferum-text-secondary);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+}
+
+.collapsible-card.collapsed .collapsible-content {
+  display: none;
+}
+
 .teacher-claims-list {
   display: flex;
   flex-direction: column;

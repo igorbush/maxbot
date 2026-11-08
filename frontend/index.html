@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#edeef0" id="meta-theme-color">
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 
@@ -200,31 +200,34 @@
         <p class="page-desc">Управление бонусами и одобрение заявок учеников</p>
       </div>
 
-      <div class="teacher-class-bar">
-        <span class="bar-caption">Чат:</span>
-        <select id="teacher-class-select" class="teacher-select" onchange="onTeacherClassChange(this.value)">
-          <option value="all">Все чаты</option>
-        </select>
-      </div>
-
-      <div class="sferum-card">
-        <div class="card-header-row">
-          <h3>Входящие заявки на награды</h3>
+      <div class="sferum-card collapsible-card" id="card-pending-claims">
+        <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-pending-claims')">
+          <div class="collapsible-header-left">
+            <span class="collapse-icon">▾</span>
+            <h3>Входящие заявки на награды</h3>
+          </div>
           <span class="count-pill" id="pending-claims-count">0</span>
         </div>
-        <div id="teacher-requests-list" class="teacher-claims-list">
-          <div class="state-loading">Загрузка заявок...</div>
+        <div class="collapsible-content">
+          <div id="teacher-requests-list" class="teacher-claims-list">
+            <div class="state-loading">Загрузка заявок...</div>
+          </div>
         </div>
       </div>
 
-      <div class="sferum-card">
-        <div class="card-header-row">
-          <h3>Выданные награды</h3>
+      <div class="sferum-card collapsible-card collapsed" id="card-issued-rewards">
+        <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-issued-rewards')">
+          <div class="collapsible-header-left">
+            <span class="collapse-icon">▸</span>
+            <h3>Выданные награды</h3>
+          </div>
           <span class="count-pill" id="teacher-issued-count">0</span>
         </div>
-        <p class="card-subtext">История выданных бонусов и одобренных наград ученикам.</p>
-        <div id="teacher-issued-list" class="teacher-issued-list">
-          <div class="state-loading">Загрузка истории...</div>
+        <div class="collapsible-content">
+          <p class="card-subtext">История выданных бонусов и одобренных наград ученикам.</p>
+          <div id="teacher-issued-list" class="teacher-issued-list">
+            <div class="state-loading">Загрузка истории...</div>
+          </div>
         </div>
       </div>
 
@@ -239,20 +242,25 @@
         </div>
       </div>
 
-      <div class="sferum-card">
-        <div class="card-header-row">
-          <h3>Награды в этом чате</h3>
+      <div class="sferum-card collapsible-card collapsed" id="card-teacher-rewards">
+        <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-teacher-rewards')">
+          <div class="collapsible-header-left">
+            <span class="collapse-icon">▸</span>
+            <h3>Награды в этом чате</h3>
+          </div>
           <span class="count-pill" id="teacher-rewards-count">0</span>
         </div>
-        <p class="card-subtext">Активные бонусы от учителей. Вы можете удалить неактуальные награды.</p>
-        <div id="teacher-rewards-list" class="teacher-rewards-list">
-          <div class="state-loading">Загрузка наград...</div>
+        <div class="collapsible-content">
+          <p class="card-subtext">Активные бонусы от учителей. Вы можете удалить неактуальные награды.</p>
+          <div id="teacher-rewards-list" class="teacher-rewards-list">
+            <div class="state-loading">Загрузка наград...</div>
+          </div>
         </div>
       </div>
 
       <div class="sferum-card">
         <h3>Добавить новую награду</h3>
-        <p class="card-subtext">Создайте награду для этого чата или для всех ваших чатов.</p>
+        <p class="card-subtext">Создайте награду для выбранного чата.</p>
         <form id="create-reward-form" onsubmit="handleCreateReward(event)">
           <div class="form-field">
             <label class="field-label">Название награды</label>
@@ -262,17 +270,9 @@
             <label class="field-label">Описание</label>
             <input type="text" id="rew-desc" class="sferum-input" placeholder="Условия и порядок применения" required>
           </div>
-          <div class="form-row-compact">
-            <div class="form-field flex-1">
-              <label class="field-label">Стоимость (спасибки)</label>
-              <input type="number" id="rew-price" class="sferum-input" value="3" min="1" max="500" required>
-            </div>
-            <div class="form-field flex-1">
-              <label class="field-label">Для какого чата</label>
-              <select id="rew-chat-select" class="sferum-input">
-                <option value="all">Для всех чатов</option>
-              </select>
-            </div>
+          <div class="form-field">
+            <label class="field-label">Стоимость (спасибки)</label>
+            <input type="number" id="rew-price" class="sferum-input" value="3" min="1" max="500" required>
           </div>
           <button type="submit" class="sferum-btn btn-primary full-width">Опубликовать награду</button>
         </form>
@@ -349,6 +349,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>

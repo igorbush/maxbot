@@ -6,8 +6,17 @@ let selectedChatId = "all";
 let selectedChatTitle = "Учебный чат";
 let currentLeaderboardPeriod = "all_time";
 let currentLeaderboardScope = "class";
-let teacherSelectedChatId = "all";
 let lastThemeToggle = 0;
+
+function toggleCardCollapse(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  card.classList.toggle("collapsed");
+  const icon = card.querySelector(".collapse-icon");
+  if (icon) {
+    icon.textContent = card.classList.contains("collapsed") ? "▸" : "▾";
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
@@ -230,8 +239,6 @@ async function loadProfile() {
     }
 
     updateClassSelectorUI();
-    populateTeacherClassDropdowns();
-
   } catch (err) {
     showToast("Не удалось обновить профиль");
   }
@@ -303,45 +310,6 @@ function selectClass(chatId, chatTitle) {
   showToast("Выбран чат: " + chatTitle);
   loadProfile();
   refreshActiveTab();
-}
-
-function populateTeacherClassDropdowns() {
-  const selectElem = document.getElementById("teacher-class-select");
-  const rewSelectElem = document.getElementById("rew-chat-select");
-
-  const teacherChats = availableChats.filter(c => c.role === "teacher");
-  let options = "";
-  if (teacherChats.length > 1) {
-    options += '<option value="all">Все мои чаты</option>';
-  }
-  options += teacherChats.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join("");
-
-  if (selectElem) {
-    selectElem.innerHTML = options || '<option value="">Нет учительских чатов</option>';
-    if (teacherSelectedChatId === "all" && teacherChats.length > 1) {
-      selectElem.value = "all";
-    } else if (teacherChats.some(c => c.id === teacherSelectedChatId)) {
-      selectElem.value = teacherSelectedChatId;
-    } else if (teacherChats.length > 0) {
-      teacherSelectedChatId = teacherChats[0].id;
-      selectElem.value = teacherSelectedChatId;
-    }
-  }
-  if (rewSelectElem) {
-    rewSelectElem.innerHTML = options || '<option value="all">Для всех чатов</option>';
-    if (teacherSelectedChatId && teacherSelectedChatId !== "all" && teacherChats.some(c => c.id === teacherSelectedChatId)) {
-      rewSelectElem.value = teacherSelectedChatId;
-    }
-  }
-}
-
-function onTeacherClassChange(chatId) {
-  teacherSelectedChatId = chatId;
-  const rewSelectElem = document.getElementById("rew-chat-select");
-  if (rewSelectElem && chatId !== "all") {
-    rewSelectElem.value = chatId;
-  }
-  loadTeacherData();
 }
 
 function switchTab(tabName, btnElement) {
@@ -607,9 +575,9 @@ async function loadTeacherData() {
   listContainer.innerHTML = '<div class="state-loading">Загрузка заявок...</div>';
 
   try {
-    let url = `/api/teacher/overview?user_id=${currentUserId}`;
-    if (teacherSelectedChatId && teacherSelectedChatId !== "all") {
-      url += `&chat_id=${teacherSelectedChatId}`;
+    let url = `/api/teacher/overview?user_id=${encodeURIComponent(currentUserId)}`;
+    if (selectedChatId && selectedChatId !== "all") {
+      url += `&chat_id=${encodeURIComponent(selectedChatId)}`;
     }
 
     const res = await fetch(url);
@@ -618,6 +586,19 @@ async function loadTeacherData() {
 
     const claims = overview.pending_claims || [];
     if (badgeCount) badgeCount.textContent = claims.length;
+
+    const pendingCard = document.getElementById("card-pending-claims");
+    if (pendingCard) {
+      if (claims.length === 0) {
+        pendingCard.classList.add("collapsed");
+        const icon = pendingCard.querySelector(".collapse-icon");
+        if (icon) icon.textContent = "▸";
+      } else {
+        pendingCard.classList.remove("collapsed");
+        const icon = pendingCard.querySelector(".collapse-icon");
+        if (icon) icon.textContent = "▾";
+      }
+    }
 
     if (!claims.length) {
       listContainer.innerHTML = '<p class="empty-state-text">Новых заявок от учеников нет.</p>';
@@ -673,8 +654,8 @@ async function loadStudentsDropdown() {
   const selectElem = document.getElementById("teacher-award-student");
   try {
     let url = "/api/students";
-    if (teacherSelectedChatId && teacherSelectedChatId !== "all") {
-      url += `?chat_id=${teacherSelectedChatId}`;
+    if (selectedChatId && selectedChatId !== "all") {
+      url += `?chat_id=${encodeURIComponent(selectedChatId)}`;
     }
     const res = await fetch(url);
     const students = await res.json();
@@ -710,7 +691,6 @@ async function handleCreateReward(e) {
   const title = document.getElementById("rew-title").value.trim();
   const desc = document.getElementById("rew-desc").value.trim();
   const price = parseInt(document.getElementById("rew-price").value);
-  const chatId = document.getElementById("rew-chat-select").value;
 
   if (!title || !desc || !price) return;
 
@@ -725,7 +705,7 @@ async function handleCreateReward(e) {
         title: title,
         description: desc,
         cost_spasibki: price,
-        chat_id: chatId !== "all" ? chatId : null,
+        chat_id: selectedChatId !== "all" ? selectedChatId : null,
       })
     });
 
@@ -748,8 +728,8 @@ async function loadTeacherRewards() {
 
   try {
     let url = `/api/rewards?user_id=${encodeURIComponent(currentUserId)}`;
-    if (teacherSelectedChatId && teacherSelectedChatId !== "all") {
-      url += `&chat_id=${encodeURIComponent(teacherSelectedChatId)}`;
+    if (selectedChatId && selectedChatId !== "all") {
+      url += `&chat_id=${encodeURIComponent(selectedChatId)}`;
     }
     const res = await fetch(url);
     const rewards = await res.json();
@@ -815,7 +795,7 @@ async function handleAwardTeacherBadge() {
       body: JSON.stringify({
         student_id: studentId,
         badge_code: "teacher_choice",
-        chat_id: teacherSelectedChatId !== "all" ? teacherSelectedChatId : null,
+        chat_id: selectedChatId !== "all" ? selectedChatId : null,
       })
     });
 

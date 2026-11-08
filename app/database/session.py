@@ -162,6 +162,9 @@ async def init_db():
         except Exception:
             pass
 
+        teacher_ids_subq = select(User.max_user_id).where(User.role.in_(["teacher", "admin"]))
+        await session.execute(delete(RewardClaim).where(RewardClaim.student_max_id.in_(teacher_ids_subq)))
+
         dialog_subq = select(Chat.max_chat_id).where(
             or_(
                 Chat.title == "Диалог",

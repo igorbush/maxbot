@@ -590,10 +590,17 @@ async def get_teacher_overview(
     current_teacher: User = Depends(require_teacher),
     session: AsyncSession = Depends(get_db_session),
 ):
+    if not chat_id or chat_id == "all":
+        return TeacherOverviewResponse(
+            pending_claims=[],
+            active_questions=[],
+            total_students=0,
+            issued_rewards=[],
+        )
     overview = await TeacherService.get_teacher_overview(
         session=session,
         teacher_max_id=current_teacher.max_user_id,
-        chat_id=chat_id if chat_id != "all" else None,
+        chat_id=chat_id,
     )
     return TeacherOverviewResponse(
         pending_claims=overview.get("pending_claims", []),

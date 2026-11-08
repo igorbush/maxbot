@@ -290,15 +290,25 @@ class TeacherService:
     ) -> Dict[str, Any]:
         await cls._require_teacher(session, teacher_max_id)
 
+        if not chat_id or chat_id == "all":
+            return {
+                "pending_claims": [],
+                "active_questions": [],
+                "total_students": 0,
+                "issued_rewards": [],
+            }
+
         claims_query = (
             select(RewardClaim, Reward, User)
             .join(Reward, RewardClaim.reward_id == Reward.id)
             .join(User, RewardClaim.student_max_id == User.max_user_id)
-            .where(RewardClaim.status == "requested")
+            .where(
+                RewardClaim.status == "requested",
+                RewardClaim.chat_id == chat_id,
+                RewardClaim.student_max_id != teacher_max_id,
+            )
+            .order_by(RewardClaim.created_at.desc())
         )
-        if chat_id:
-            claims_query = claims_query.where(or_(RewardClaim.chat_id == chat_id, Reward.chat_id == chat_id))
-        claims_query = claims_query.order_by(RewardClaim.created_at.desc())
 
         claims_res = await session.execute(claims_query)
         pending_claims = [
@@ -319,11 +329,10 @@ class TeacherService:
         q_query = (
             select(Question, User)
             .join(User, Question.author_max_id == User.max_user_id)
-            .where(Question.status == "open")
+            .where(Question.status == "open", Question.group_chat_id == chat_id)
+            .order_by(Question.created_at.desc())
+            .limit(20)
         )
-        if chat_id:
-            q_query = q_query.where(Question.group_chat_id == chat_id)
-        q_query = q_query.order_by(Question.created_at.desc()).limit(20)
 
         q_res = await session.execute(q_query)
         active_questions = [
@@ -339,12 +348,14 @@ class TeacherService:
             for q, u in q_res.all()
         ]
 
-        students_query = select(func.count(User.id)).where(User.role == "student")
-        if chat_id:
-            students_query = (
-                select(func.count(ChatMember.id))
-                .where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+        students_query = (
+            select(func.count(ChatMember.id))
+            .where(
+                ChatMember.chat_max_id == chat_id,
+                ChatMember.role != "teacher",
+                ChatMember.user_max_id != teacher_max_id,
             )
+        )
         students_count_res = await session.execute(students_query)
         total_students = students_count_res.scalar_one() or 0
 
@@ -352,11 +363,14 @@ class TeacherService:
             select(RewardClaim, Reward, User)
             .join(Reward, RewardClaim.reward_id == Reward.id)
             .join(User, RewardClaim.student_max_id == User.max_user_id)
-            .where(RewardClaim.status == "approved")
+            .where(
+                RewardClaim.status == "approved",
+                RewardClaim.chat_id == chat_id,
+                RewardClaim.student_max_id != teacher_max_id,
+            )
+            .order_by(RewardClaim.created_at.desc())
+            .limit(25)
         )
-        if chat_id:
-            issued_query = issued_query.where(or_(RewardClaim.chat_id == chat_id, Reward.chat_id == chat_id))
-        issued_query = issued_query.order_by(RewardClaim.created_at.desc()).limit(25)
 
         issued_res = await session.execute(issued_query)
         issued_rewards = [
@@ -374,10 +388,15 @@ class TeacherService:
         choice_query = (
             select(AuditLog, User)
             .join(User, AuditLog.target_user_max_id == User.max_user_id)
-            .where(AuditLog.actor_max_id == teacher_max_id, AuditLog.action == "adjust_balance")
+            .where(
+                AuditLog.actor_max_id == teacher_max_id,
+                AuditLog.action == "adjust_balance",
+                AuditLog.details.like(f"%chat_id={chat_id}%"),
+                AuditLog.target_user_max_id != teacher_max_id,
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(15)
         )
-        if chat_id:
-            choice_query = choice_query.where(AuditLog.details.like(f"%chat_id={chat_id}%"))
         choice_query = choice_query.order_by(AuditLog.created_at.desc()).limit(15)
 
         choice_res = await session.execute(choice_query)
