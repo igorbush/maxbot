@@ -138,21 +138,29 @@ async def init_db():
             pass
 
         try:
-            await session.execute(text("ALTER TABLE chat_members ADD COLUMN balance_spasibki INTEGER DEFAULT 5"))
+            await session.execute(text("ALTER TABLE chat_members ADD COLUMN balance_spasibki INTEGER DEFAULT 0"))
             await session.commit()
         except Exception:
             pass
 
         try:
-            await session.execute(text("UPDATE chat_members SET balance_spasibki = 5 WHERE balance_spasibki IS NULL"))
+            await session.execute(text("ALTER TABLE chat_members ADD COLUMN xp INTEGER DEFAULT 0"))
+            await session.commit()
+        except Exception:
+            pass
+
+        try:
+            await session.execute(text("UPDATE chat_members SET balance_spasibki = 0 WHERE balance_spasibki IS NULL OR balance_spasibki = 5"))
+            await session.execute(text("UPDATE chat_members SET xp = 0 WHERE xp IS NULL OR xp = 100"))
+            await session.execute(text("UPDATE users SET balance_spasibki = 0, xp = 0, rank = 'Новичок' WHERE (xp = 100 AND balance_spasibki = 10) OR rank = 'Любитель'"))
             await session.commit()
         except Exception:
             pass
 
         teacher_ids_subq = select(User.max_user_id).where(User.role.in_(["teacher", "admin"]))
         await session.execute(delete(RewardClaim).where(RewardClaim.student_max_id.in_(teacher_ids_subq)))
-        await session.execute(text("UPDATE chat_members SET balance_spasibki = 0 WHERE role = 'teacher'"))
-        await session.execute(text("UPDATE users SET balance_spasibki = 0 WHERE role IN ('teacher', 'admin')"))
+        await session.execute(text("UPDATE chat_members SET balance_spasibki = 0, xp = 0 WHERE role = 'teacher'"))
+        await session.execute(text("UPDATE users SET balance_spasibki = 0, xp = 0 WHERE role IN ('teacher', 'admin')"))
 
         dialog_subq = select(Chat.max_chat_id).where(
             or_(

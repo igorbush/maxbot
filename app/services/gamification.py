@@ -8,6 +8,7 @@ from app.database.models import (
     Achievement,
     Answer,
     AuditLog,
+    ChatMember,
     Question,
     User,
     UserAchievement,
@@ -169,19 +170,43 @@ class GamificationService:
         user_res = await session.execute(user_query)
         helper = user_res.scalar_one_or_none()
         if helper is not None:
-            helper.balance_spasibki += delta_spasibki
-            helper.xp += delta_xp
-            helper.rank = cls.calculate_rank(helper.xp)
+            if helper.role not in ("teacher", "admin"):
+                helper.balance_spasibki += delta_spasibki
+                helper.xp += delta_xp
+                helper.rank = cls.calculate_rank(helper.xp)
         else:
             helper = User(
                 max_user_id=answer.author_max_id,
                 display_name=answer.author_name or "Ученик",
                 role="student",
-                balance_spasibki=10 + delta_spasibki,
-                xp=100 + delta_xp,
-                rank=cls.calculate_rank(100 + delta_xp),
+                balance_spasibki=delta_spasibki,
+                xp=delta_xp,
+                rank=cls.calculate_rank(delta_xp),
             )
             session.add(helper)
+
+        if question and question.group_chat_id:
+            cm_res = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == question.group_chat_id,
+                    ChatMember.user_max_id == answer.author_max_id,
+                )
+            )
+            cm_obj = cm_res.scalar_one_or_none()
+            if cm_obj is not None:
+                if cm_obj.role != "teacher":
+                    cm_obj.balance_spasibki += delta_spasibki
+                    cm_obj.xp += delta_xp
+            else:
+                session.add(
+                    ChatMember(
+                        chat_max_id=question.group_chat_id,
+                        user_max_id=answer.author_max_id,
+                        role="student",
+                        balance_spasibki=delta_spasibki,
+                        xp=delta_xp,
+                    )
+                )
 
         answer.status = "accepted"
         question.status = "resolved"
@@ -372,15 +397,17 @@ class GamificationService:
         return newly_awarded_codes
 
     @classmethod
-    async def calculate_streak(cls, session: AsyncSession, user_id: str) -> int:
+    async def calculate_streak(cls, session: AsyncSession, user_id: str, chat_id: Optional[str] = None) -> int:
         answers_query = (
             select(Answer.created_at)
             .where(
                 Answer.author_max_id == user_id,
                 Answer.status == "accepted",
             )
-            .order_by(Answer.created_at.desc())
         )
+        if chat_id and chat_id != "all":
+            answers_query = answers_query.join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        answers_query = answers_query.order_by(Answer.created_at.desc())
         res = await session.execute(answers_query)
         dates = sorted(set(to_school_date(dt) for dt in res.scalars().all()), reverse=True)
         if not dates:

@@ -30,9 +30,9 @@ async def get_current_user(
             max_user_id=uid,
             display_name=final_name,
             role="student",
-            balance_spasibki=10,
-            xp=100,
-            rank="Любитель",
+            balance_spasibki=0,
+            xp=0,
+            rank="Новичок",
         )
         session.add(user)
         await session.commit()

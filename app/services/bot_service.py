@@ -153,9 +153,9 @@ async def ensure_user_and_chat(
             display_name=display_name,
             avatar_url=avatar_url,
             role="teacher" if is_teacher else "student",
-            balance_spasibki=0 if is_teacher else 10,
-            xp=0 if is_teacher else 100,
-            rank="Учитель" if is_teacher else "Любитель",
+            balance_spasibki=0,
+            xp=0,
+            rank="Учитель" if is_teacher else "Новичок",
         )
         session.add(user)
     else:
@@ -193,7 +193,8 @@ async def ensure_user_and_chat(
                 chat_max_id=chat_id,
                 user_max_id=user_id,
                 role=member_role,
-                balance_spasibki=0 if member_role == "teacher" else 5,
+                balance_spasibki=0,
+                xp=0,
             )
             session.add(member_row)
         else:
@@ -452,14 +453,14 @@ async def on_top_command(event: MessageCreated):
 
     async with async_session_factory() as session:
         leaders_res = await session.execute(
-            select(User, ChatMember.balance_spasibki)
+            select(User, ChatMember.xp, ChatMember.balance_spasibki)
             .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
             .where(
                 ChatMember.chat_max_id == chat_id,
                 ChatMember.role != "teacher",
                 User.role != "teacher",
             )
-            .order_by(User.xp.desc(), ChatMember.balance_spasibki.desc(), User.id.asc())
+            .order_by(ChatMember.xp.desc(), ChatMember.balance_spasibki.desc(), User.id.asc())
             .limit(10)
         )
         leaders = leaders_res.all()
@@ -468,10 +469,11 @@ async def on_top_command(event: MessageCreated):
     if not leaders:
         lines.append("В этом чате пока нет участников с начисленными баллами.")
     else:
-        for idx, (leader, chat_bal) in enumerate(leaders, 1):
+        for idx, (leader, chat_xp, chat_bal) in enumerate(leaders, 1):
             badge = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
-            bal = chat_bal if chat_bal is not None else leader.balance_spasibki
-            lines.append(f"{badge} {leader.display_name} — {leader.xp} XP ({bal} спасибок)")
+            cur_xp = chat_xp if chat_xp is not None else 0
+            bal = chat_bal if chat_bal is not None else 0
+            lines.append(f"{badge} {leader.display_name} — {cur_xp} XP ({bal} спасибок)")
 
     await event.message.reply(text="\n".join(lines))
 
@@ -712,7 +714,7 @@ async def sync_bot_chats(target_bot: Bot):
                         select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == owner_id)
                     )
                     if not res_m.scalar_one_or_none():
-                        session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher"))
+                        session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher", balance_spasibki=0, xp=0))
 
                 try:
                     admins_data = await target_bot.get_list_admin_chat(int(chat_id))
@@ -724,9 +726,11 @@ async def sync_bot_chats(target_bot: Bot):
                             u_res = await session.execute(select(User).where(User.max_user_id == adm_id))
                             u_row = u_res.scalar_one_or_none()
                             if not u_row:
-                                session.add(User(max_user_id=adm_id, display_name=adm_name, role="teacher", balance_spasibki=10, xp=100))
+                                session.add(User(max_user_id=adm_id, display_name=adm_name, role="teacher", balance_spasibki=0, xp=0, rank="Учитель"))
                             else:
                                 u_row.role = "teacher"
+                                u_row.balance_spasibki = 0
+                                u_row.xp = 0
                                 if adm_name and not adm_name.startswith("Учитель "):
                                     u_row.display_name = adm_name
 
@@ -734,10 +738,12 @@ async def sync_bot_chats(target_bot: Bot):
                                 select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == adm_id)
                             )
                             if not am_res.scalar_one_or_none():
-                                session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher"))
+                                session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher", balance_spasibki=0, xp=0))
                             else:
                                 am_row = am_res.scalar_one()
                                 am_row.role = "teacher"
+                                am_row.balance_spasibki = 0
+                                am_row.xp = 0
                 except Exception:
                     pass
 
@@ -966,9 +972,9 @@ async def on_callback_query(event: MessageCallback):
                         max_user_id=answer.author_max_id,
                         display_name=answer.author_name or "Ученик",
                         role="student",
-                        balance_spasibki=11,
-                        xp=150,
-                        rank=GamificationService.calculate_rank(150),
+                        balance_spasibki=1,
+                        xp=50,
+                        rank=GamificationService.calculate_rank(50),
                     )
                     session.add(helper)
 
@@ -983,13 +989,15 @@ async def on_callback_query(event: MessageCallback):
                     if cm_obj is not None:
                         if cm_obj.role != "teacher":
                             cm_obj.balance_spasibki += 1
+                            cm_obj.xp += 50
                     else:
                         session.add(
                             ChatMember(
                                 chat_max_id=chat_id,
                                 user_max_id=answer.author_max_id,
                                 role="student",
-                                balance_spasibki=6,
+                                balance_spasibki=1,
+                                xp=50,
                             )
                         )
 
@@ -1113,7 +1121,7 @@ async def on_callback_query(event: MessageCallback):
         async with async_session_factory() as session:
             res_user = await session.execute(select(User).where(User.max_user_id == user_id))
             u = res_user.scalar_one_or_none()
-            rank_name = u.rank if u else "Любитель"
+            rank_name = u.rank if u else "Новичок"
             xp_val = u.xp if u else 0
             active_balances, total_spasibki = await fetch_user_chat_balances(session, event.bot, user_id)
 

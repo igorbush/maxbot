@@ -197,6 +197,17 @@ class TeacherService:
             mem = mem_res.scalar_one_or_none()
             if mem is not None:
                 mem.balance_spasibki = max(0, mem.balance_spasibki + delta_spasibki)
+                mem.xp = max(0, mem.xp + delta_xp)
+            else:
+                session.add(
+                    ChatMember(
+                        chat_max_id=chat_id,
+                        user_max_id=student_max_id,
+                        role="student",
+                        balance_spasibki=max(0, delta_spasibki),
+                        xp=max(0, delta_xp),
+                    )
+                )
 
         student.balance_spasibki = max(0, student.balance_spasibki + delta_spasibki)
         student.xp = max(0, student.xp + delta_xp)
