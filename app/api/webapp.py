@@ -39,6 +39,13 @@ class ChatItem(BaseModel):
     title: str
     role: str = "student"
 
+class ClassPulseResponse(BaseModel):
+    total_questions_week: int = 0
+    resolved_questions_week: int = 0
+    resolution_rate: int = 0
+    top_helper_name: str = "—"
+    time_saved_hours: float = 0.0
+
 class UserProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -56,6 +63,7 @@ class UserProfileResponse(BaseModel):
     streak_days: int = 0
     chats: List[ChatItem] = []
     achievements: List[AchievementItem] = []
+    class_pulse: Optional[ClassPulseResponse] = None
 
 class LeaderboardEntry(BaseModel):
     rank_position: int
@@ -116,13 +124,6 @@ class AwardBadgeRequest(BaseModel):
     student_id: str
     badge_code: Optional[str] = "teacher_choice"
     chat_id: Optional[str] = None
-
-class ClassPulseResponse(BaseModel):
-    total_questions_week: int = 0
-    resolved_questions_week: int = 0
-    resolution_rate: int = 0
-    top_helper_name: str = "—"
-    time_saved_hours: float = 0.0
 
 class TeacherOverviewResponse(BaseModel):
     pending_claims: List[Dict[str, Any]]
@@ -289,9 +290,13 @@ async def get_profile(
     elif user_chats:
         current_role = user_chats[0].role
 
+    pulse_data = None
     if current_role == "teacher":
         current_balance = 0
         rank_pos = 0
+        active_chat_id = chat_id if (chat_id and chat_id != "all") else (user_chats[0].id if user_chats else None)
+        pulse_dict = await TeacherService.get_class_pulse(session, active_chat_id)
+        pulse_data = ClassPulseResponse(**pulse_dict)
 
     streak_days = await GamificationService.calculate_streak(session, current_user.max_user_id)
     level = (current_user.xp // 100) + 1
@@ -311,6 +316,7 @@ async def get_profile(
         streak_days=streak_days,
         chats=user_chats,
         achievements=achievements_data,
+        class_pulse=pulse_data,
     )
 
 @router.post("/sync-user")

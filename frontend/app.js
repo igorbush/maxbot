@@ -313,11 +313,25 @@ async function loadProfile() {
       switchTab("teacher", teacherNavBtn || document.querySelector(".bottom-tabbar .tab-item"));
     }
 
+    const statsRow = document.getElementById("profile-stats-row");
+    const pulseCard = document.getElementById("profile-class-pulse");
     const profileClaimsCard = document.getElementById("profile-my-claims-card");
-    if (profileClaimsCard) {
-      if (isTeacherInChat) {
+
+    if (isTeacherInChat) {
+      if (statsRow) statsRow.style.display = "none";
+      if (pulseCard) {
+        pulseCard.style.display = "block";
+        if (data.class_pulse) {
+          renderClassPulse(data.class_pulse);
+        }
+      }
+      if (profileClaimsCard) {
         profileClaimsCard.style.display = "none";
-      } else {
+      }
+    } else {
+      if (statsRow) statsRow.style.display = "grid";
+      if (pulseCard) pulseCard.style.display = "none";
+      if (profileClaimsCard) {
         profileClaimsCard.style.display = "block";
         loadMyClaims();
       }
@@ -400,12 +414,16 @@ function selectClass(chatId, chatTitle) {
   }
 
   const profileClaimsCard = document.getElementById("profile-my-claims-card");
-  if (profileClaimsCard) {
-    if (isTeacher) {
-      profileClaimsCard.style.display = "none";
-    } else {
-      profileClaimsCard.style.display = "block";
-    }
+  const statsRow = document.getElementById("profile-stats-row");
+  const pulseCard = document.getElementById("profile-class-pulse");
+  if (isTeacher) {
+    if (statsRow) statsRow.style.display = "none";
+    if (pulseCard) pulseCard.style.display = "block";
+    if (profileClaimsCard) profileClaimsCard.style.display = "none";
+  } else {
+    if (statsRow) statsRow.style.display = "grid";
+    if (pulseCard) pulseCard.style.display = "none";
+    if (profileClaimsCard) profileClaimsCard.style.display = "block";
   }
 
   updateClassSelectorUI();
@@ -684,6 +702,28 @@ async function handleClaimReward(rewardId, cost) {
   }
 }
 
+function renderClassPulse(pulse) {
+  if (!pulse) return;
+  const badgeElem = document.getElementById("pulse-rate-badge");
+  const resolvedVal = document.getElementById("pulse-resolved-val");
+  const timeVal = document.getElementById("pulse-time-val");
+  const leaderVal = document.getElementById("pulse-leader-val");
+  const summaryText = document.getElementById("pulse-summary-text");
+
+  if (badgeElem) badgeElem.textContent = `${pulse.resolution_rate}%`;
+  if (resolvedVal) resolvedVal.textContent = pulse.resolved_questions_week;
+  if (timeVal) timeVal.textContent = `~${pulse.time_saved_hours} ч.`;
+  if (leaderVal) leaderVal.textContent = pulse.top_helper_name || "—";
+
+  if (summaryText) {
+    if (pulse.total_questions_week === 0) {
+      summaryText.textContent = "В этом чате за последнюю неделю не было вопросов. Взаимопомощь начнётся с первого вопроса!";
+    } else {
+      summaryText.textContent = `За неделю решено ${pulse.resolved_questions_week} из ${pulse.total_questions_week} вопросов (${pulse.resolution_rate}% решено ребятами).`;
+    }
+  }
+}
+
 async function loadTeacherData() {
   const listContainer = document.getElementById("teacher-requests-list");
   const badgeCount = document.getElementById("pending-claims-count");
@@ -699,26 +739,8 @@ async function loadTeacherData() {
     if (!res.ok) throw new Error("Только для учителей");
     const overview = await res.json();
 
-    const pulse = overview.class_pulse;
-    if (pulse) {
-      const summaryText = document.getElementById("pulse-summary-text");
-      const badgeElem = document.getElementById("pulse-rate-badge");
-      const resolvedVal = document.getElementById("pulse-resolved-val");
-      const timeVal = document.getElementById("pulse-time-val");
-      const leaderVal = document.getElementById("pulse-leader-val");
-
-      if (badgeElem) badgeElem.textContent = `${pulse.resolution_rate}%`;
-      if (resolvedVal) resolvedVal.textContent = pulse.resolved_questions_week;
-      if (timeVal) timeVal.textContent = `~${pulse.time_saved_hours} ч.`;
-      if (leaderVal) leaderVal.textContent = pulse.top_helper_name || "—";
-
-      if (summaryText) {
-        if (pulse.total_questions_week === 0) {
-          summaryText.textContent = "В этом чате за последнюю неделю не было вопросов. Взаимопомощь начнётся с первого вопроса!";
-        } else {
-          summaryText.textContent = `За неделю решено ${pulse.resolved_questions_week} из ${pulse.total_questions_week} вопросов (${pulse.resolution_rate}% решено ребятами).`;
-        }
-      }
+    if (overview.class_pulse) {
+      renderClassPulse(overview.class_pulse);
     }
 
     const claims = overview.pending_claims || [];

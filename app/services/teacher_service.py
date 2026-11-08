@@ -419,15 +419,32 @@ class TeacherService:
 
         issued_rewards.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
+        class_pulse = await cls.get_class_pulse(session, chat_id)
+
+        return {
+            "pending_claims": pending_claims,
+            "active_questions": active_questions,
+            "total_students": total_students,
+            "issued_rewards": issued_rewards,
+            "class_pulse": class_pulse,
+        }
+
+    @classmethod
+    async def get_class_pulse(cls, session: AsyncSession, chat_id: Optional[str]) -> Dict[str, Any]:
         since_week = datetime.now(timezone.utc) - timedelta(days=7)
+        if not chat_id or chat_id == "all":
+            chat_cond = True
+        else:
+            chat_cond = (Question.group_chat_id == chat_id)
+
         total_q_week_query = select(func.count(Question.id)).where(
-            Question.group_chat_id == chat_id,
+            chat_cond,
             Question.created_at >= since_week,
         )
         total_q_week = (await session.execute(total_q_week_query)).scalar_one() or 0
 
         resolved_q_week_query = select(func.count(Question.id)).where(
-            Question.group_chat_id == chat_id,
+            chat_cond,
             Question.status == "resolved",
             Question.created_at >= since_week,
         )
@@ -440,7 +457,7 @@ class TeacherService:
             .join(Answer, Answer.author_max_id == User.max_user_id)
             .join(Question, Answer.question_id == Question.id)
             .where(
-                Question.group_chat_id == chat_id,
+                chat_cond,
                 Answer.status == "accepted",
                 Answer.created_at >= since_week,
                 User.role != "teacher",
@@ -452,18 +469,10 @@ class TeacherService:
         top_helper_row = (await session.execute(top_helper_query)).first()
         top_helper_name = top_helper_row[0] if top_helper_row else "—"
 
-        class_pulse = {
+        return {
             "total_questions_week": total_q_week,
             "resolved_questions_week": resolved_q_week,
             "resolution_rate": resolution_rate,
             "top_helper_name": top_helper_name,
             "time_saved_hours": round(resolved_q_week * 0.25, 1),
-        }
-
-        return {
-            "pending_claims": pending_claims,
-            "active_questions": active_questions,
-            "total_students": total_students,
-            "issued_rewards": issued_rewards,
-            "class_pulse": class_pulse,
         }
