@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#edeef0" id="meta-theme-color">
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -218,6 +218,17 @@
       </div>
 
       <div class="sferum-card">
+        <div class="card-header-row">
+          <h3>Выданные награды</h3>
+          <span class="count-pill" id="teacher-issued-count">0</span>
+        </div>
+        <p class="card-subtext">История выданных бонусов и одобренных наград ученикам.</p>
+        <div id="teacher-issued-list" class="teacher-issued-list">
+          <div class="state-loading">Загрузка истории...</div>
+        </div>
+      </div>
+
+      <div class="sferum-card">
         <h3>Вручить «Выбор учителя»</h3>
         <p class="card-subtext">Отметьте ученика за самое понятное объяснение (+100 XP и +20 спасибок).</p>
         <div class="award-form-row">
@@ -338,6 +349,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

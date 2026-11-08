@@ -150,6 +150,18 @@ async def init_db():
         except Exception:
             pass
 
+        try:
+            await session.execute(text("ALTER TABLE chat_members ADD COLUMN balance_spasibki INTEGER DEFAULT 5"))
+            await session.commit()
+        except Exception:
+            pass
+
+        try:
+            await session.execute(text("UPDATE chat_members SET balance_spasibki = 5 WHERE balance_spasibki IS NULL"))
+            await session.commit()
+        except Exception:
+            pass
+
         dialog_subq = select(Chat.max_chat_id).where(
             or_(
                 Chat.title == "Диалог",

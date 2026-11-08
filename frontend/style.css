@@ -1000,6 +1000,67 @@ body {
   gap: 9px;
 }
 
+.teacher-issued-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.teacher-issued-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--sferum-input-bg);
+  border: 1px solid var(--sferum-border);
+  border-radius: var(--sferum-radius-sm);
+  padding: 10px 12px;
+}
+
+.issued-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.issued-student-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sferum-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.issued-reward-title {
+  font-size: 11px;
+  color: var(--sferum-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.issued-meta-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.issued-price-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sferum-gold);
+}
+
+.issued-date {
+  font-size: 10px;
+  color: var(--sferum-text-muted);
+}
+
 .teacher-claim-card {
   background: var(--sferum-input-bg);
   border: 1px solid var(--sferum-border);

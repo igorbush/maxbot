@@ -60,15 +60,29 @@ class TeacherService:
         if reward.created_by_teacher_id and str(reward.created_by_teacher_id) == str(student_max_id):
             raise ValueError("Преподаватель не может обменивать созданные им награды")
 
-        if student.balance_spasibki < reward.cost_spasibki:
-            raise ValueError("Недостаточно спасибок для обмена")
+        target_chat = chat_id or reward.chat_id
+        member = None
+        if target_chat:
+            mem_res = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == target_chat,
+                    ChatMember.user_max_id == student_max_id,
+                )
+            )
+            member = mem_res.scalar_one_or_none()
 
-        student.balance_spasibki -= reward.cost_spasibki
+        current_balance = member.balance_spasibki if member is not None else student.balance_spasibki
+        if current_balance < reward.cost_spasibki:
+            raise ValueError(f"Недостаточно спасибок в этом чате (у вас {current_balance})")
+
+        if member is not None:
+            member.balance_spasibki -= reward.cost_spasibki
+        student.balance_spasibki = max(0, student.balance_spasibki - reward.cost_spasibki)
 
         claim = RewardClaim(
             reward_id=reward.id,
             student_max_id=student_max_id,
-            chat_id=chat_id or reward.chat_id,
+            chat_id=target_chat,
             status="requested",
             created_at=datetime.now(timezone.utc),
         )
@@ -121,6 +135,16 @@ class TeacherService:
             )
             reward = rew_res.scalar_one_or_none()
             if reward is not None:
+                if claim.chat_id:
+                    mem_res = await session.execute(
+                        select(ChatMember).where(
+                            ChatMember.chat_max_id == claim.chat_id,
+                            ChatMember.user_max_id == claim.student_max_id,
+                        )
+                    )
+                    mem = mem_res.scalar_one_or_none()
+                    if mem is not None:
+                        mem.balance_spasibki += reward.cost_spasibki
                 stu_res = await session.execute(
                     select(User).where(User.max_user_id == claim.student_max_id)
                 )
@@ -150,6 +174,7 @@ class TeacherService:
         delta_spasibki: int,
         delta_xp: int = 0,
         reason: str = "",
+        chat_id: Optional[str] = None,
     ) -> User:
         await cls._require_teacher(session, teacher_max_id)
 
@@ -159,6 +184,17 @@ class TeacherService:
         student = stu_res.scalar_one_or_none()
         if student is None:
             raise ValueError("Student not found")
+
+        if chat_id:
+            mem_res = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == chat_id,
+                    ChatMember.user_max_id == student_max_id,
+                )
+            )
+            mem = mem_res.scalar_one_or_none()
+            if mem is not None:
+                mem.balance_spasibki = max(0, mem.balance_spasibki + delta_spasibki)
 
         student.balance_spasibki = max(0, student.balance_spasibki + delta_spasibki)
         student.xp = max(0, student.xp + delta_xp)
@@ -170,7 +206,7 @@ class TeacherService:
             target_type="user",
             target_id=student_max_id,
             action="adjust_balance",
-            details=f"delta_spasibki={delta_spasibki},delta_xp={delta_xp},reason={reason}",
+            details=f"delta_spasibki={delta_spasibki},delta_xp={delta_xp},reason={reason},chat_id={chat_id}",
             created_at=datetime.now(timezone.utc),
         )
         session.add(audit)
@@ -310,8 +346,54 @@ class TeacherService:
         students_count_res = await session.execute(students_query)
         total_students = students_count_res.scalar_one() or 0
 
+        issued_query = (
+            select(RewardClaim, Reward, User)
+            .join(Reward, RewardClaim.reward_id == Reward.id)
+            .join(User, RewardClaim.student_max_id == User.max_user_id)
+            .where(RewardClaim.status == "approved")
+        )
+        if chat_id:
+            issued_query = issued_query.where(or_(RewardClaim.chat_id == chat_id, Reward.chat_id == chat_id))
+        issued_query = issued_query.order_by(RewardClaim.created_at.desc()).limit(25)
+
+        issued_res = await session.execute(issued_query)
+        issued_rewards = [
+            {
+                "id": f"claim_{c.id}",
+                "student_name": u.display_name,
+                "reward_title": r.title,
+                "cost_spasibki": r.cost_spasibki,
+                "date": c.created_at.strftime("%d.%m %H:%M") if c.created_at else "",
+                "created_at": c.created_at.isoformat() if c.created_at else "",
+            }
+            for c, r, u in issued_res.all()
+        ]
+
+        choice_query = (
+            select(AuditLog, User)
+            .join(User, AuditLog.target_user_max_id == User.max_user_id)
+            .where(AuditLog.actor_max_id == teacher_max_id, AuditLog.action == "adjust_balance")
+        )
+        if chat_id:
+            choice_query = choice_query.where(AuditLog.details.like(f"%chat_id={chat_id}%"))
+        choice_query = choice_query.order_by(AuditLog.created_at.desc()).limit(15)
+
+        choice_res = await session.execute(choice_query)
+        for log, u in choice_res.all():
+            issued_rewards.append({
+                "id": f"choice_{log.id}",
+                "student_name": u.display_name,
+                "reward_title": "⭐️ Выбор учителя (+20 спасибок)",
+                "cost_spasibki": 20,
+                "date": log.created_at.strftime("%d.%m %H:%M") if log.created_at else "",
+                "created_at": log.created_at.isoformat() if log.created_at else "",
+            })
+
+        issued_rewards.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
         return {
             "pending_claims": pending_claims,
             "active_questions": active_questions,
             "total_students": total_students,
+            "issued_rewards": issued_rewards,
         }

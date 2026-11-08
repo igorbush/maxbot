@@ -110,11 +110,13 @@ class SyncUserRequest(BaseModel):
 class AwardBadgeRequest(BaseModel):
     student_id: str
     badge_code: Optional[str] = "teacher_choice"
+    chat_id: Optional[str] = None
 
 class TeacherOverviewResponse(BaseModel):
     pending_claims: List[Dict[str, Any]]
     active_questions: List[Dict[str, Any]]
     total_students: int
+    issued_rewards: List[Dict[str, Any]] = []
 
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
@@ -251,11 +253,21 @@ async def get_profile(
         ]
 
     current_role = current_user.role
+    current_balance = current_user.balance_spasibki
     if chat_id and chat_id != "all":
         for uc in user_chats:
             if uc.id == chat_id:
                 current_role = uc.role
                 break
+        cm_res = await session.execute(
+            select(ChatMember).where(
+                ChatMember.chat_max_id == chat_id,
+                ChatMember.user_max_id == current_user.max_user_id,
+            )
+        )
+        cm_row = cm_res.scalar_one_or_none()
+        if cm_row is not None:
+            current_balance = cm_row.balance_spasibki
     elif user_chats:
         current_role = user_chats[0].role
 
@@ -265,7 +277,7 @@ async def get_profile(
         max_user_id=current_user.max_user_id,
         display_name=current_user.display_name,
         role=current_role,
-        balance_spasibki=current_user.balance_spasibki,
+        balance_spasibki=current_balance,
         xp=current_user.xp,
         rank=current_user.rank,
         level=level,
@@ -425,7 +437,11 @@ async def get_leaderboard(
         chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
         chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
         all_time_query = (
-            select(User)
+            select(User, ChatMember.balance_spasibki)
+            .outerjoin(
+                ChatMember,
+                (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
+            )
             .where(
                 or_(
                     User.max_user_id.in_(chat_user_subq),
@@ -437,6 +453,19 @@ async def get_leaderboard(
             .offset(offset)
             .limit(limit)
         )
+        res = await session.execute(all_time_query)
+        items = [
+            LeaderboardEntry(
+                rank_position=idx,
+                max_user_id=s.max_user_id,
+                display_name=s.display_name,
+                rank=s.rank,
+                xp=s.xp,
+                balance_spasibki=bal if bal is not None else s.balance_spasibki,
+            )
+            for idx, (s, bal) in enumerate(res.all(), offset + 1)
+        ]
+        return LeaderboardResponse(period=period, items=items)
     else:
         all_time_query = (
             select(User)
@@ -465,9 +494,31 @@ async def get_rewards(
     chat_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session),
 ):
-    query = select(Reward).where(Reward.is_active == True)
     if chat_id and chat_id != "all":
-        query = query.where(or_(Reward.chat_id == chat_id, Reward.chat_id.is_(None)))
+        existing_res = await session.execute(
+            select(Reward).where(Reward.is_active == True, Reward.chat_id == chat_id)
+        )
+        chat_rewards = existing_res.scalars().all()
+        if not chat_rewards:
+            from app.database.session import READY_REWARDS
+            new_rewards = [
+                Reward(
+                    created_by_teacher_id="teacher_admin",
+                    chat_id=chat_id,
+                    title=r["title"],
+                    description=r["description"],
+                    cost_spasibki=r["cost_spasibki"],
+                    is_active=True,
+                )
+                for r in READY_REWARDS
+            ]
+            session.add_all(new_rewards)
+            await session.commit()
+            query = select(Reward).where(Reward.is_active == True, Reward.chat_id == chat_id)
+        else:
+            query = select(Reward).where(Reward.is_active == True, Reward.chat_id == chat_id)
+    else:
+        query = select(Reward).where(Reward.is_active == True)
     query = query.order_by(Reward.cost_spasibki.asc())
     res = await session.execute(query)
     return res.scalars().all()
@@ -533,6 +584,7 @@ async def get_teacher_overview(
         pending_claims=overview.get("pending_claims", []),
         active_questions=overview.get("active_questions", []),
         total_students=overview.get("total_students", 0),
+        issued_rewards=overview.get("issued_rewards", []),
     )
 
 @router.post("/teacher/review-claim")
@@ -619,6 +671,7 @@ async def award_teacher_badge(
         delta_spasibki=20,
         delta_xp=100,
         reason="Награда Выбор учителя",
+        chat_id=body.chat_id if body.chat_id != "all" else None,
     )
     return {"status": "ok", "awarded": new_codes}
 
@@ -629,11 +682,23 @@ async def list_students(
 ):
     if chat_id and chat_id != "all":
         query = (
-            select(User)
+            select(User, ChatMember.balance_spasibki)
             .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
             .where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
             .order_by(User.display_name.asc())
         )
+        res = await session.execute(query)
+        rows = res.all()
+        return [
+            {
+                "max_user_id": s.max_user_id,
+                "display_name": s.display_name,
+                "rank": s.rank,
+                "balance_spasibki": bal if bal is not None else s.balance_spasibki,
+                "xp": s.xp,
+            }
+            for s, bal in rows
+        ]
     else:
         query = (
             select(User)
@@ -647,15 +712,15 @@ async def list_students(
             )
             .order_by(User.display_name.asc())
         )
-    res = await session.execute(query)
-    students = res.scalars().all()
-    return [
-        {
-            "max_user_id": s.max_user_id,
-            "display_name": s.display_name,
-            "rank": s.rank,
-            "balance_spasibki": s.balance_spasibki,
-            "xp": s.xp,
-        }
-        for s in students
-    ]
+        res = await session.execute(query)
+        students = res.scalars().all()
+        return [
+            {
+                "max_user_id": s.max_user_id,
+                "display_name": s.display_name,
+                "rank": s.rank,
+                "balance_spasibki": s.balance_spasibki,
+                "xp": s.xp,
+            }
+            for s in students
+        ]

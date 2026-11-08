@@ -17,6 +17,7 @@ class ChatMember(SQLModel, table=True):
     chat_max_id: str = Field(index=True)
     user_max_id: str = Field(index=True)
     role: str = Field(default="student")
+    balance_spasibki: int = Field(default=5)
 
 class User(SQLModel, table=True):
     __tablename__ = "users"

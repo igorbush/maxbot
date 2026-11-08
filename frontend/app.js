@@ -329,11 +329,18 @@ function populateTeacherClassDropdowns() {
   }
   if (rewSelectElem) {
     rewSelectElem.innerHTML = options || '<option value="all">Для всех чатов</option>';
+    if (teacherSelectedChatId && teacherSelectedChatId !== "all" && teacherChats.some(c => c.id === teacherSelectedChatId)) {
+      rewSelectElem.value = teacherSelectedChatId;
+    }
   }
 }
 
 function onTeacherClassChange(chatId) {
   teacherSelectedChatId = chatId;
+  const rewSelectElem = document.getElementById("rew-chat-select");
+  if (rewSelectElem && chatId !== "all") {
+    rewSelectElem.value = chatId;
+  }
   loadTeacherData();
 }
 
@@ -630,6 +637,30 @@ async function loadTeacherData() {
       `).join("");
     }
 
+    const issuedContainer = document.getElementById("teacher-issued-list");
+    const issuedBadge = document.getElementById("teacher-issued-count");
+    const issued = overview.issued_rewards || [];
+    if (issuedBadge) issuedBadge.textContent = issued.length;
+
+    if (issuedContainer) {
+      if (!issued.length) {
+        issuedContainer.innerHTML = '<p class="empty-state-text">Вы пока не выдавали наград в этом чате.</p>';
+      } else {
+        issuedContainer.innerHTML = issued.map(item => `
+          <div class="teacher-issued-row">
+            <div class="issued-info-col">
+              <div class="issued-student-name">${escapeHtml(item.student_name)}</div>
+              <div class="issued-reward-title">${escapeHtml(item.reward_title)}</div>
+            </div>
+            <div class="issued-meta-col">
+              <span class="issued-price-tag">${item.cost_spasibki > 0 ? item.cost_spasibki + ' спасибок' : 'Бонус'}</span>
+              <span class="issued-date">${escapeHtml(item.date || '')}</span>
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+
     loadStudentsDropdown();
     loadTeacherRewards();
 
@@ -781,7 +812,11 @@ async function handleAwardTeacherBadge() {
         "Content-Type": "application/json",
         "X-User-Id": currentUserId,
       },
-      body: JSON.stringify({ student_id: studentId, badge_code: "teacher_choice" })
+      body: JSON.stringify({
+        student_id: studentId,
+        badge_code: "teacher_choice",
+        chat_id: teacherSelectedChatId !== "all" ? teacherSelectedChatId : null,
+      })
     });
 
     if (!res.ok) throw new Error("Ошибка награждения");

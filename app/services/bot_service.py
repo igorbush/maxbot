@@ -116,6 +116,7 @@ async def ensure_user_and_chat(
                 chat_max_id=chat_id,
                 user_max_id=user_id,
                 role=member_role,
+                balance_spasibki=5,
             )
             session.add(member_row)
         else:
@@ -151,7 +152,7 @@ async def on_bot_added(event: BotAdded):
                     select(ChatMember).where(ChatMember.chat_max_id == chat_id, ChatMember.user_max_id == owner_id)
                 )
                 if not res_m.scalar_one_or_none():
-                    session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher"))
+                    session.add(ChatMember(chat_max_id=chat_id, user_max_id=owner_id, role="teacher", balance_spasibki=5))
 
             try:
                 admin_res = await event.bot.get_list_admin_chat(event.chat_id)
@@ -171,7 +172,7 @@ async def on_bot_added(event: BotAdded):
                         )
                         adm_m = res_adm_m.scalar_one_or_none()
                         if not adm_m:
-                            session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher"))
+                            session.add(ChatMember(chat_max_id=chat_id, user_max_id=adm_id, role="teacher", balance_spasibki=5))
                         else:
                             adm_m.role = "teacher"
             except Exception:
@@ -266,34 +267,23 @@ async def on_top_command(event: MessageCreated):
         return
 
     async with async_session_factory() as session:
-        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id)
-        chat_ans_subq = (
-            select(Answer.author_max_id)
-            .join(Question, Answer.question_id == Question.id)
-            .where(Question.group_chat_id == chat_id)
-        )
-        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
         leaders_res = await session.execute(
-            select(User)
-            .where(
-                or_(
-                    User.max_user_id.in_(chat_user_subq),
-                    User.max_user_id.in_(chat_ans_subq),
-                    User.max_user_id.in_(chat_q_subq),
-                )
-            )
-            .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+            select(User, ChatMember.balance_spasibki)
+            .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
+            .where(ChatMember.chat_max_id == chat_id)
+            .order_by(User.xp.desc(), ChatMember.balance_spasibki.desc(), User.id.asc())
             .limit(10)
         )
-        leaders = leaders_res.scalars().all()
+        leaders = leaders_res.all()
 
     lines = [f"🏆 Топ помощников чата «{chat_title}»:\n"]
     if not leaders:
         lines.append("В этом чате пока нет участников с начисленными баллами.")
     else:
-        for idx, leader in enumerate(leaders, 1):
+        for idx, (leader, chat_bal) in enumerate(leaders, 1):
             badge = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
-            lines.append(f"{badge} {leader.display_name} — {leader.xp} XP ({leader.balance_spasibki} спасибок)")
+            bal = chat_bal if chat_bal is not None else leader.balance_spasibki
+            lines.append(f"{badge} {leader.display_name} — {leader.xp} XP ({bal} спасибок)")
 
     await event.message.reply(text="\n".join(lines))
 
@@ -359,13 +349,13 @@ async def on_ask_command(event: MessageCreated):
         await session.refresh(q)
 
         sent = await event.message.reply(
-            text=f"💡 Вопрос #{q.id} принят в Лигу Помощников! Ответьте на него реплаем, чтобы помочь (+50 XP)."
+            text="💡 Вопрос принят в Лигу Помощников! Ответьте на него реплаем, чтобы помочь (+50 XP)."
         )
         if sent and sent.message and sent.message.body and sent.message.body.mid:
             q.group_message_id = str(sent.message.body.mid)
             await session.commit()
 
-        print(f"[БОТ] Вопрос #{q.id} опубликован в чате '{chat_title}' от {user_name}")
+        print(f"[БОТ] Вопрос опубликован в чате '{chat_title}' от {user_name}")
 
 async def sync_bot_chats(target_bot: Bot):
     try:
@@ -519,12 +509,12 @@ async def on_generic_message(event: MessageCreated):
         await session.commit()
         await session.refresh(ans)
 
-        print(f"[БОТ] Ответ на вопрос #{question.id} от {helper_name}")
+        print(f"[БОТ] Ответ на вопрос от {helper_name}")
 
     author_target = int(question.author_max_id) if str(question.author_max_id).isdigit() else None
     approval_kb = build_approval_keyboard(ans.id)
     dm_text = (
-        f"Вам ответил(а) {helper_name} на вопрос #{question.id}:\n\n"
+        f"Вам ответил(а) {helper_name} на ваш вопрос:\n\n"
         f"«{raw_text}»\n\n"
         f"Помогло ли вам это объяснение?"
     )
@@ -632,8 +622,28 @@ async def on_callback_query(event: MessageCallback):
                     )
                     session.add(helper)
 
+                if chat_id:
+                    cm_res = await session.execute(
+                        select(ChatMember).where(
+                            ChatMember.chat_max_id == chat_id,
+                            ChatMember.user_max_id == answer.author_max_id,
+                        )
+                    )
+                    cm_obj = cm_res.scalar_one_or_none()
+                    if cm_obj is not None:
+                        cm_obj.balance_spasibki += 1
+                    else:
+                        session.add(
+                            ChatMember(
+                                chat_max_id=chat_id,
+                                user_max_id=answer.author_max_id,
+                                role="student",
+                                balance_spasibki=6,
+                            )
+                        )
+
                 await session.commit()
-                print(f"[БОТ] Помощь подтверждена: вопрос #{q_id}, {helper_name} получил +50 XP и +1 спасибку")
+                print(f"[БОТ] Помощь подтверждена: {helper_name} получил +50 XP и +1 спасибку")
 
         if already_handled:
             if is_already_accepted:
@@ -660,7 +670,7 @@ async def on_callback_query(event: MessageCallback):
             try:
                 chat_target = int(chat_id) if str(chat_id).isdigit() else chat_id
                 celeb_text = (
-                    f"🎉 Вопрос #{q_id} успешно решён!\n\n"
+                    f"🎉 Вопрос успешно решён!\n\n"
                     f"Помог(ла): {helper_name} (+50 XP, +1 спасибка)\n"
                     f"Автор {q_author_name} поблагодарил(а) за помощь."
                 )
