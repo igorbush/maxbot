@@ -29,6 +29,88 @@ async def send_chat_notification(chat_id: str, text: str):
         except Exception as e:
             print(f"[БОТ] Не удалось отправить уведомление в чат {chat_id}: {e}")
 
+_last_chat_sync: dict[str, float] = {}
+
+async def sync_chat_members(session, bot: Optional[Bot], chat_id: str, force: bool = False):
+    if not bot or not chat_id or not str(chat_id).isdigit():
+        return
+    import time
+    now_ts = time.time()
+    cid_str = str(chat_id)
+    if not force and (now_ts - _last_chat_sync.get(cid_str, 0.0) < 60.0):
+        return
+    _last_chat_sync[cid_str] = now_ts
+
+    try:
+        cid = int(cid_str)
+        marker = None
+        while True:
+            data = await bot.get_chat_members(chat_id=cid, marker=marker, count=100)
+            if not data or not hasattr(data, "members") or not data.members:
+                break
+            for m in data.members:
+                if getattr(m, "is_bot", False):
+                    continue
+                uid = str(m.user_id)
+                first = getattr(m, "first_name", "") or ""
+                last = getattr(m, "last_name", "") or ""
+                full_name = f"{first} {last}".strip() or getattr(m, "username", "") or f"Участник {uid}"
+                avatar = getattr(m, "full_avatar_url", None) or getattr(m, "avatar_url", None)
+                is_teacher = bool(getattr(m, "is_owner", False) or getattr(m, "is_admin", False))
+                target_role = "teacher" if is_teacher else "student"
+
+                u_res = await session.execute(select(User).where(User.max_user_id == uid))
+                u = u_res.scalar_one_or_none()
+                if not u:
+                    u = User(
+                        max_user_id=uid,
+                        display_name=full_name,
+                        avatar_url=avatar,
+                        role=target_role,
+                        balance_spasibki=0,
+                        xp=0,
+                        rank="Учитель" if is_teacher else "Новичок",
+                    )
+                    session.add(u)
+                else:
+                    if full_name and (u.display_name.startswith("Участник ") or u.display_name.startswith("Ученик ")):
+                        u.display_name = full_name
+                    if avatar and not u.avatar_url:
+                        u.avatar_url = avatar
+                    if is_teacher and u.role != "teacher":
+                        u.role = "teacher"
+                        u.balance_spasibki = 0
+                        u.xp = 0
+
+                cm_res = await session.execute(
+                    select(ChatMember).where(ChatMember.chat_max_id == cid_str, ChatMember.user_max_id == uid)
+                )
+                cm = cm_res.scalar_one_or_none()
+                if not cm:
+                    session.add(
+                        ChatMember(
+                            chat_max_id=cid_str,
+                            user_max_id=uid,
+                            role=target_role,
+                            balance_spasibki=0,
+                            xp=0,
+                        )
+                    )
+                else:
+                    if is_teacher:
+                        cm.role = "teacher"
+                        cm.balance_spasibki = 0
+                        cm.xp = 0
+                    elif cm.role == "teacher" and not is_teacher:
+                        cm.role = "student"
+
+            if not getattr(data, "marker", None):
+                break
+            marker = data.marker
+        await session.commit()
+    except Exception as e:
+        print(f"[БОТ] Ошибка синхронизации участников чата {chat_id}: {e}")
+
 def extract_display_name(user) -> str:
     if not user:
         return "Участник"
@@ -260,6 +342,7 @@ async def on_bot_added(event: BotAdded):
                 pass
 
             await session.commit()
+            await sync_chat_members(session, event.bot, chat_id, force=True)
 
             if chat_id and chat_id.isdigit():
                 welcome_group_text = (
@@ -452,16 +535,36 @@ async def on_top_command(event: MessageCreated):
         return
 
     async with async_session_factory() as session:
+        await sync_chat_members(session, event.bot, chat_id)
+
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+        chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+
         leaders_res = await session.execute(
-            select(User, ChatMember.xp, ChatMember.balance_spasibki)
-            .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
-            .where(
-                ChatMember.chat_max_id == chat_id,
-                ChatMember.role != "teacher",
-                User.role != "teacher",
+            select(
+                User,
+                func.coalesce(ChatMember.xp, 0).label("chat_xp"),
+                func.coalesce(ChatMember.balance_spasibki, 0).label("chat_bal"),
             )
-            .order_by(ChatMember.xp.desc(), ChatMember.balance_spasibki.desc(), User.id.asc())
-            .limit(10)
+            .outerjoin(
+                ChatMember,
+                (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
+            )
+            .where(
+                or_(ChatMember.role.is_(None), ChatMember.role != "teacher"),
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
+                ),
+            )
+            .order_by(
+                func.coalesce(ChatMember.xp, 0).desc(),
+                func.coalesce(ChatMember.balance_spasibki, 0).desc(),
+                User.id.asc(),
+            )
+            .limit(30)
         )
         leaders = leaders_res.all()
 
@@ -746,6 +849,8 @@ async def sync_bot_chats(target_bot: Bot):
                                 am_row.xp = 0
                 except Exception:
                     pass
+
+                await sync_chat_members(session, target_bot, chat_id, force=True)
 
             await session.commit()
             print("[БОТ] Синхронизация чатов и администраторов завершена")

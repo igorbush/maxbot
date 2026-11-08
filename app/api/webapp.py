@@ -20,7 +20,7 @@ from app.database.session import get_db_session
 from app.services.auth import get_current_user, require_teacher
 from app.services.teacher_service import TeacherService
 from app.services.gamification import GamificationService
-from app.services.bot_service import send_chat_notification
+from app.services.bot_service import send_chat_notification, sync_chat_members, bot_instance
 
 router = APIRouter(tags=["webapp"])
 
@@ -173,6 +173,9 @@ async def get_profile(
     ]
 
     if chat_id and chat_id != "all":
+        if bot_instance:
+            await sync_chat_members(session, bot_instance, chat_id)
+
         h_res = await session.execute(
             select(func.count(Answer.id))
             .join(Question, Answer.question_id == Question.id)
@@ -192,15 +195,38 @@ async def get_profile(
         )
         questions_count = q_res.scalar_one() or 0
 
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+        chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+
         members_res = await session.execute(
-            select(ChatMember)
-            .where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
-            .order_by(ChatMember.xp.desc(), ChatMember.balance_spasibki.desc(), ChatMember.id.asc())
+            select(
+                User.max_user_id,
+                func.coalesce(ChatMember.xp, 0).label("chat_xp"),
+                func.coalesce(ChatMember.balance_spasibki, 0).label("chat_bal"),
+            )
+            .outerjoin(
+                ChatMember,
+                (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
+            )
+            .where(
+                or_(ChatMember.role.is_(None), ChatMember.role != "teacher"),
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
+                ),
+            )
+            .order_by(
+                func.coalesce(ChatMember.xp, 0).desc(),
+                func.coalesce(ChatMember.balance_spasibki, 0).desc(),
+                User.id.asc(),
+            )
         )
-        chat_members = members_res.scalars().all()
+        chat_members = members_res.all()
         rank_pos = 1
-        for idx, cm in enumerate(chat_members, 1):
-            if cm.user_max_id == current_user.max_user_id:
+        for idx, (m_uid, _, _) in enumerate(chat_members, 1):
+            if m_uid == current_user.max_user_id:
                 rank_pos = idx
                 break
     else:
@@ -219,8 +245,9 @@ async def get_profile(
         )
         questions_count = q_res.scalar_one() or 0
 
+        student_subq = select(ChatMember.user_max_id).where(ChatMember.role != "teacher")
         all_students_res = await session.execute(
-            select(User).where(User.role != "teacher").order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+            select(User).where(or_(User.role != "teacher", User.max_user_id.in_(student_subq))).order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
         )
         students = all_students_res.scalars().all()
         rank_pos = 1
@@ -429,33 +456,63 @@ async def get_leaderboard(
     offset: int = Query(0),
     session: AsyncSession = Depends(get_db_session),
 ):
+    if chat_id and chat_id != "all":
+        if bot_instance:
+            await sync_chat_members(session, bot_instance, chat_id)
+
     if period == "weekly":
         since_dt = datetime.now(timezone.utc) - timedelta(days=7)
         if chat_id and chat_id != "all":
-            weekly_query = (
+            chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+            chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+            chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+            chat_claim_subq = select(RewardClaim.student_max_id).where(RewardClaim.chat_id == chat_id)
+
+            weekly_ans_subq = (
                 select(
-                    User.max_user_id,
-                    User.display_name,
-                    User.avatar_url,
-                    ChatMember.xp,
-                    ChatMember.balance_spasibki,
+                    Answer.author_max_id,
                     (func.count(Answer.id) * 50).label("week_xp"),
                 )
-                .join(Answer, Answer.author_max_id == User.max_user_id)
                 .join(Question, Answer.question_id == Question.id)
-                .join(
-                    ChatMember,
-                    (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
-                )
                 .where(
                     Answer.status == "accepted",
                     Answer.created_at >= since_dt,
                     Question.group_chat_id == chat_id,
-                    ChatMember.role != "teacher",
-                    User.role != "teacher",
                 )
-                .group_by(User.id, ChatMember.xp, ChatMember.balance_spasibki)
-                .order_by(func.count(Answer.id).desc(), ChatMember.xp.desc())
+                .group_by(Answer.author_max_id)
+                .subquery()
+            )
+
+            weekly_query = (
+                select(
+                    User,
+                    func.coalesce(ChatMember.xp, 0).label("chat_xp"),
+                    func.coalesce(ChatMember.balance_spasibki, 0).label("chat_bal"),
+                    func.coalesce(weekly_ans_subq.c.week_xp, 0).label("week_xp"),
+                )
+                .outerjoin(
+                    ChatMember,
+                    (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
+                )
+                .outerjoin(
+                    weekly_ans_subq,
+                    User.max_user_id == weekly_ans_subq.c.author_max_id,
+                )
+                .where(
+                    or_(ChatMember.role.is_(None), ChatMember.role != "teacher"),
+                    or_(
+                        User.max_user_id.in_(chat_user_subq),
+                        User.max_user_id.in_(chat_ans_subq),
+                        User.max_user_id.in_(chat_q_subq),
+                        User.max_user_id.in_(chat_claim_subq),
+                    ),
+                )
+                .order_by(
+                    func.coalesce(weekly_ans_subq.c.week_xp, 0).desc(),
+                    func.coalesce(ChatMember.xp, 0).desc(),
+                    func.coalesce(ChatMember.balance_spasibki, 0).desc(),
+                    User.id.asc(),
+                )
                 .offset(offset)
                 .limit(limit)
             )
@@ -464,31 +521,47 @@ async def get_leaderboard(
             items = [
                 LeaderboardEntry(
                     rank_position=idx,
-                    max_user_id=row[0],
-                    display_name=row[1],
-                    avatar_url=row[2],
-                    rank=GamificationService.calculate_rank(row[3] or 0),
-                    xp=row[5],
-                    balance_spasibki=row[4] or 0,
+                    max_user_id=s.max_user_id,
+                    display_name=s.display_name,
+                    avatar_url=s.avatar_url,
+                    rank=GamificationService.calculate_rank(chat_xp or 0),
+                    xp=week_xp,
+                    balance_spasibki=chat_bal or 0,
                 )
-                for idx, row in enumerate(rows, offset + 1)
+                for idx, (s, chat_xp, chat_bal, week_xp) in enumerate(rows, offset + 1)
             ]
             return LeaderboardResponse(period=period, items=items)
         else:
+            student_subq = select(ChatMember.user_max_id).where(ChatMember.role != "teacher")
+            weekly_all_subq = (
+                select(
+                    Answer.author_max_id,
+                    (func.count(Answer.id) * 50).label("week_xp"),
+                )
+                .where(
+                    Answer.status == "accepted",
+                    Answer.created_at >= since_dt,
+                )
+                .group_by(Answer.author_max_id)
+                .subquery()
+            )
+
             weekly_query = (
                 select(
-                    User.max_user_id,
-                    User.display_name,
-                    User.rank,
-                    User.balance_spasibki,
-                    User.xp,
-                    (func.count(Answer.id) * 50).label("week_xp"),
-                    User.avatar_url,
+                    User,
+                    func.coalesce(weekly_all_subq.c.week_xp, 0).label("week_xp"),
                 )
-                .join(Answer, Answer.author_max_id == User.max_user_id)
-                .where(Answer.status == "accepted", Answer.created_at >= since_dt, User.role != "teacher")
-                .group_by(User.id)
-                .order_by(func.count(Answer.id).desc(), User.xp.desc())
+                .outerjoin(
+                    weekly_all_subq,
+                    User.max_user_id == weekly_all_subq.c.author_max_id,
+                )
+                .where(or_(User.role != "teacher", User.max_user_id.in_(student_subq)))
+                .order_by(
+                    func.coalesce(weekly_all_subq.c.week_xp, 0).desc(),
+                    User.xp.desc(),
+                    User.balance_spasibki.desc(),
+                    User.id.asc(),
+                )
                 .offset(offset)
                 .limit(limit)
             )
@@ -497,29 +570,47 @@ async def get_leaderboard(
             items = [
                 LeaderboardEntry(
                     rank_position=idx,
-                    max_user_id=row[0],
-                    display_name=row[1],
-                    avatar_url=row[6],
-                    rank=row[2],
-                    xp=row[5],
-                    balance_spasibki=row[3],
+                    max_user_id=s.max_user_id,
+                    display_name=s.display_name,
+                    avatar_url=s.avatar_url,
+                    rank=s.rank,
+                    xp=week_xp,
+                    balance_spasibki=s.balance_spasibki,
                 )
-                for idx, row in enumerate(rows, offset + 1)
+                for idx, (s, week_xp) in enumerate(rows, offset + 1)
             ]
             return LeaderboardResponse(period=period, items=items)
 
     if chat_id and chat_id != "all":
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+        chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+        chat_claim_subq = select(RewardClaim.student_max_id).where(RewardClaim.chat_id == chat_id)
+
         all_time_query = (
-            select(User, ChatMember.xp, ChatMember.balance_spasibki)
-            .join(
+            select(
+                User,
+                func.coalesce(ChatMember.xp, 0).label("chat_xp"),
+                func.coalesce(ChatMember.balance_spasibki, 0).label("chat_bal"),
+            )
+            .outerjoin(
                 ChatMember,
                 (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
             )
             .where(
-                ChatMember.role != "teacher",
-                User.role != "teacher",
+                or_(ChatMember.role.is_(None), ChatMember.role != "teacher"),
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
+                    User.max_user_id.in_(chat_claim_subq),
+                ),
             )
-            .order_by(ChatMember.xp.desc(), ChatMember.balance_spasibki.desc(), User.id.asc())
+            .order_by(
+                func.coalesce(ChatMember.xp, 0).desc(),
+                func.coalesce(ChatMember.balance_spasibki, 0).desc(),
+                User.id.asc(),
+            )
             .offset(offset)
             .limit(limit)
         )
@@ -532,15 +623,16 @@ async def get_leaderboard(
                 avatar_url=s.avatar_url,
                 rank=GamificationService.calculate_rank(chat_xp or 0),
                 xp=chat_xp or 0,
-                balance_spasibki=bal or 0,
+                balance_spasibki=chat_bal or 0,
             )
-            for idx, (s, chat_xp, bal) in enumerate(res.all(), offset + 1)
+            for idx, (s, chat_xp, chat_bal) in enumerate(res.all(), offset + 1)
         ]
         return LeaderboardResponse(period=period, items=items)
     else:
+        student_subq = select(ChatMember.user_max_id).where(ChatMember.role != "teacher")
         all_time_query = (
             select(User)
-            .where(User.role != "teacher")
+            .where(or_(User.role != "teacher", User.max_user_id.in_(student_subq)))
             .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
             .offset(offset)
             .limit(limit)
@@ -789,10 +881,30 @@ async def list_students(
     session: AsyncSession = Depends(get_db_session),
 ):
     if chat_id and chat_id != "all":
+        if bot_instance:
+            await sync_chat_members(session, bot_instance, chat_id)
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+        chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        chat_q_subq = select(Question.author_max_id).where(Question.group_chat_id == chat_id)
+
         query = (
-            select(User, ChatMember.balance_spasibki, ChatMember.xp)
-            .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
-            .where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+            select(
+                User,
+                func.coalesce(ChatMember.balance_spasibki, 0).label("chat_bal"),
+                func.coalesce(ChatMember.xp, 0).label("chat_xp"),
+            )
+            .outerjoin(
+                ChatMember,
+                (ChatMember.user_max_id == User.max_user_id) & (ChatMember.chat_max_id == chat_id),
+            )
+            .where(
+                or_(ChatMember.role.is_(None), ChatMember.role != "teacher"),
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                    User.max_user_id.in_(chat_q_subq),
+                ),
+            )
             .order_by(User.display_name.asc())
         )
         res = await session.execute(query)
@@ -808,16 +920,10 @@ async def list_students(
             for s, bal, chat_xp in rows
         ]
     else:
+        student_subq = select(ChatMember.user_max_id).where(ChatMember.role != "teacher")
         query = (
             select(User)
-            .where(
-                or_(
-                    User.role == "student",
-                    User.max_user_id.in_(
-                        select(ChatMember.user_max_id).where(ChatMember.role != "teacher")
-                    ),
-                )
-            )
+            .where(or_(User.role != "teacher", User.max_user_id.in_(student_subq)))
             .order_by(User.display_name.asc())
         )
         res = await session.execute(query)
