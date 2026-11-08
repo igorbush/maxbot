@@ -167,7 +167,7 @@ async def get_profile(
     questions_count = q_res.scalar_one() or 0
 
     all_students_res = await session.execute(
-        select(User).where(User.role == "student").order_by(User.xp.desc(), User.id.asc())
+        select(User).order_by(User.xp.desc(), User.id.asc())
     )
     students = all_students_res.scalars().all()
     rank_pos = 1
@@ -215,7 +215,7 @@ async def get_profile(
     user_chats = list(user_chats_map.values())
     if not user_chats:
         user_chats = [
-            ChatItem(id="my_class", title="Мой учебный класс", role=current_user.role)
+            ChatItem(id="my_class", title="Мой учебный чат", role=current_user.role)
         ]
 
     current_role = current_user.role
@@ -321,7 +321,7 @@ async def get_chats(
     my_chats = list(user_chats_map.values())
     if my_chats:
         return my_chats
-    return [ChatItem(id="my_class", title="Мой учебный класс", role=current_user.role)]
+    return [ChatItem(id="my_class", title="Мой учебный чат", role=current_user.role)]
 
 @router.get("/achievements", response_model=List[AchievementItem])
 async def get_achievements(
@@ -369,10 +369,10 @@ async def get_leaderboard(
                 (func.count(Answer.id) * 50).label("week_xp"),
             )
             .join(Answer, Answer.author_max_id == User.max_user_id)
-            .where(User.role == "student", Answer.status == "accepted", Answer.created_at >= since_dt)
+            .where(Answer.status == "accepted", Answer.created_at >= since_dt)
         )
         if chat_id and chat_id != "all":
-            weekly_query = weekly_query.join(ChatMember, ChatMember.user_max_id == User.max_user_id).where(ChatMember.chat_max_id == chat_id)
+            weekly_query = weekly_query.join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
 
         weekly_query = (
             weekly_query.group_by(User.id)
@@ -396,11 +396,29 @@ async def get_leaderboard(
             ]
             return LeaderboardResponse(period=period, items=items)
 
-    all_time_query = select(User).where(User.role == "student")
     if chat_id and chat_id != "all":
-        all_time_query = all_time_query.join(ChatMember, ChatMember.user_max_id == User.max_user_id).where(ChatMember.chat_max_id == chat_id)
+        chat_user_subq = select(ChatMember.user_max_id).where(ChatMember.chat_max_id == chat_id)
+        chat_ans_subq = select(Answer.author_max_id).join(Question, Answer.question_id == Question.id).where(Question.group_chat_id == chat_id)
+        all_time_query = (
+            select(User)
+            .where(
+                or_(
+                    User.max_user_id.in_(chat_user_subq),
+                    User.max_user_id.in_(chat_ans_subq),
+                )
+            )
+            .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+    else:
+        all_time_query = (
+            select(User)
+            .order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc())
+            .offset(offset)
+            .limit(limit)
+        )
 
-    all_time_query = all_time_query.order_by(User.xp.desc(), User.balance_spasibki.desc(), User.id.asc()).offset(offset).limit(limit)
     res = await session.execute(all_time_query)
     students = res.scalars().all()
     items = [
@@ -564,10 +582,26 @@ async def list_students(
     chat_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session),
 ):
-    query = select(User).where(User.role == "student")
     if chat_id and chat_id != "all":
-        query = query.join(ChatMember, ChatMember.user_max_id == User.max_user_id).where(ChatMember.chat_max_id == chat_id)
-    query = query.order_by(User.display_name.asc())
+        query = (
+            select(User)
+            .join(ChatMember, ChatMember.user_max_id == User.max_user_id)
+            .where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
+            .order_by(User.display_name.asc())
+        )
+    else:
+        query = (
+            select(User)
+            .where(
+                or_(
+                    User.role == "student",
+                    User.max_user_id.in_(
+                        select(ChatMember.user_max_id).where(ChatMember.role != "teacher")
+                    ),
+                )
+            )
+            .order_by(User.display_name.asc())
+        )
     res = await session.execute(query)
     students = res.scalars().all()
     return [

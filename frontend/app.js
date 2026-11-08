@@ -3,7 +3,7 @@ let currentUserDisplayName = "";
 let currentUserData = null;
 let availableChats = [];
 let selectedChatId = "all";
-let selectedChatTitle = "Учебный класс";
+let selectedChatTitle = "Учебный чат";
 let currentLeaderboardPeriod = "all_time";
 let currentLeaderboardScope = "class";
 let teacherSelectedChatId = "all";
@@ -214,9 +214,9 @@ async function loadProfile() {
         selectedChatTitle = availableChats[0].title;
       }
     } else {
-      availableChats = [{ id: "my_class", title: "Мой учебный класс", role: data.role }];
+      availableChats = [{ id: "my_class", title: "Мой учебный чат", role: data.role }];
       selectedChatId = "my_class";
-      selectedChatTitle = "Мой учебный класс";
+      selectedChatTitle = "Мой учебный чат";
     }
 
     const teacherNavBtn = document.getElementById("nav-teacher-btn");
@@ -288,7 +288,7 @@ function selectClass(chatId, chatTitle) {
 
   updateClassSelectorUI();
   closeClassModal();
-  showToast("Выбран класс: " + chatTitle);
+  showToast("Выбран чат: " + chatTitle);
   loadProfile();
   refreshActiveTab();
 }
@@ -297,7 +297,7 @@ function populateTeacherClassDropdowns() {
   const selectElem = document.getElementById("teacher-class-select");
   const rewSelectElem = document.getElementById("rew-chat-select");
 
-  let options = '<option value="all">Все классы</option>';
+  let options = '<option value="all">Все чаты</option>';
   options += availableChats.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join("");
 
   if (selectElem) {
@@ -331,8 +331,11 @@ function switchTab(tabName, btnElement) {
 
 function setLeaderboardScope(scope) {
   currentLeaderboardScope = scope;
-  document.getElementById("scope-class-btn").classList.toggle("active", scope === "class");
-  document.getElementById("scope-school-btn").classList.toggle("active", scope === "school");
+  const isChat = (scope === "chat" || scope === "class");
+  const classBtn = document.getElementById("scope-class-btn");
+  const allBtn = document.getElementById("scope-school-btn");
+  if (classBtn) classBtn.classList.toggle("active", isChat);
+  if (allBtn) allBtn.classList.toggle("active", !isChat);
   loadLeaderboard();
 }
 
@@ -349,8 +352,9 @@ async function loadLeaderboard() {
 
   try {
     let url = `/api/leaderboard?period=${currentLeaderboardPeriod}`;
-    if (currentLeaderboardScope === "class" && selectedChatId && selectedChatId !== "all") {
-      url += `&chat_id=${selectedChatId}`;
+    const isChat = (currentLeaderboardScope === "chat" || currentLeaderboardScope === "class");
+    if (isChat && selectedChatId && selectedChatId !== "all") {
+      url += `&chat_id=${encodeURIComponent(selectedChatId)}`;
     } else {
       url += `&chat_id=all`;
     }

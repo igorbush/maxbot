@@ -270,7 +270,7 @@ class TeacherService:
         if chat_id:
             students_query = (
                 select(func.count(ChatMember.id))
-                .where(ChatMember.chat_max_id == chat_id, ChatMember.role == "student")
+                .where(ChatMember.chat_max_id == chat_id, ChatMember.role != "teacher")
             )
         students_count_res = await session.execute(students_query)
         total_students = students_count_res.scalar_one() or 0

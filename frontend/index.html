@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#edeef0" id="meta-theme-color">
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -25,7 +25,7 @@
             <svg class="icon-inline" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/>
             </svg>
-            <span id="current-class-label">Учебный класс</span>
+            <span id="current-class-label">Учебный чат</span>
             <span class="picker-arrow">▾</span>
           </button>
         </div>
@@ -91,7 +91,7 @@
             </svg>
           </div>
           <div class="stat-number" id="profile-helped">0</div>
-          <div class="stat-caption">Помог в классе</div>
+          <div class="stat-caption">Помог в чатах</div>
         </div>
 
         <div class="stat-box">
@@ -124,20 +124,20 @@
           </svg>
           <h3>Как работает взаимопомощь</h3>
         </div>
-        <p>Задавайте вопросы в чате класса через команду <code>/ask</code>. Отвечайте на вопросы одноклассников реплаем. Когда автор подтверждает ответ кнопкой «Помог», вам начисляется <b>+50 XP</b> и <b>+1 спасибка</b>.</p>
+        <p>Задавайте вопросы в чате через команду <code>/ask</code>. Отвечайте на вопросы одноклассников реплаем. Когда автор подтверждает ответ кнопкой «Помог», вам начисляется <b>+50 XP</b> и <b>+1 спасибка</b>.</p>
       </div>
     </section>
 
     <section id="tab-leaderboard" class="tab-pane">
       <div class="page-title-box">
         <h2 class="page-title">Рейтинг помощников</h2>
-        <p class="page-desc">Ученики, которые активнее всех помогают классу</p>
+        <p class="page-desc">Участники, которые активнее всех помогают в чате</p>
       </div>
 
       <div class="segmented-wrapper">
         <div class="segmented-control scope-selector">
-          <button class="seg-btn active" id="scope-class-btn" onclick="setLeaderboardScope('class')">В моём классе</button>
-          <button class="seg-btn" id="scope-school-btn" onclick="setLeaderboardScope('school')">По всей школе</button>
+          <button class="seg-btn active" id="scope-class-btn" onclick="setLeaderboardScope('chat')">В этом чате</button>
+          <button class="seg-btn" id="scope-school-btn" onclick="setLeaderboardScope('all')">Все чаты</button>
         </div>
 
         <div class="segmented-control period-selector">
@@ -164,7 +164,7 @@
 
     <section id="tab-rewards" class="tab-pane">
       <div class="page-title-box">
-        <h2 class="page-title">Школьная лавка наград</h2>
+        <h2 class="page-title">Лавка наград</h2>
         <p class="page-desc">Обменивайте спасибки на бонусы от учителей</p>
       </div>
 
@@ -195,9 +195,9 @@
       </div>
 
       <div class="teacher-class-bar">
-        <span class="bar-caption">Класс:</span>
+        <span class="bar-caption">Чат:</span>
         <select id="teacher-class-select" class="teacher-select" onchange="onTeacherClassChange(this.value)">
-          <option value="all">Все классы</option>
+          <option value="all">Все чаты</option>
         </select>
       </div>
 
@@ -224,7 +224,7 @@
 
       <div class="sferum-card">
         <h3>Добавить новую награду</h3>
-        <p class="card-subtext">Создайте награду для вашего класса или всей школы.</p>
+        <p class="card-subtext">Создайте награду для этого чата или для всех ваших чатов.</p>
         <form id="create-reward-form" onsubmit="handleCreateReward(event)">
           <div class="form-field">
             <label class="field-label">Название награды</label>
@@ -240,9 +240,9 @@
               <input type="number" id="rew-price" class="sferum-input" value="30" min="1" max="500" required>
             </div>
             <div class="form-field flex-1">
-              <label class="field-label">Для какого класса</label>
+              <label class="field-label">Для какого чата</label>
               <select id="rew-chat-select" class="sferum-input">
-                <option value="all">Для всей школы</option>
+                <option value="all">Для всех чатов</option>
               </select>
             </div>
           </div>
@@ -311,7 +311,7 @@
     <div class="modal-sheet">
       <div class="sheet-handle"></div>
       <div class="sheet-header">
-        <h3 class="sheet-title">Учебный класс</h3>
+        <h3 class="sheet-title">Учебные чаты</h3>
         <button class="sheet-close" onclick="closeClassModal()">✕</button>
       </div>
       <div class="sheet-classes-list" id="sheet-classes-list">
@@ -321,6 +321,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
