@@ -37,6 +37,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     bot_task = None
     if bot and settings.MAX_BOT_TOKEN:
+        try:
+            bot.me = await bot.get_me()
+            print(f"[БОТ] Авторизован как @{bot.me.username} ({bot.me.first_name})")
+        except Exception as e:
+            print(f"[БОТ] get_me: {e}")
         await register_bot_commands(bot)
         await sync_bot_chats(bot)
         print("[БОТ] Запуск опроса MAX API (библиотека maxapi)...")

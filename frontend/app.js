@@ -12,6 +12,14 @@ document.addEventListener("DOMContentLoaded", () => {
   initTheme();
   initUserFromMAX();
   loadProfile();
+
+  const themeBtn = document.getElementById("theme-toggle-btn");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", toggleTheme);
+    themeBtn.addEventListener("touchend", (e) => {
+      toggleTheme(e);
+    });
+  }
 });
 
 function initTheme() {
@@ -20,11 +28,13 @@ function initTheme() {
     localStorage.removeItem("sferum_theme_v2");
     localStorage.removeItem("sferum_theme_v3");
     localStorage.removeItem("sferum_theme_v4");
+    localStorage.removeItem("sferum_theme_v5");
+    localStorage.removeItem("sferum_theme_v6");
   } catch (e) {}
 
   let savedTheme = "light";
   try {
-    savedTheme = localStorage.getItem("sferum_theme_v5") || "light";
+    savedTheme = localStorage.getItem("sferum_theme_v7") || "light";
   } catch (e) {}
 
   applyTheme(savedTheme === "dark" ? "dark" : "light");
@@ -39,8 +49,11 @@ function toggleTheme(event) {
   const next = current === "light" ? "dark" : "light";
   applyTheme(next);
   try {
-    localStorage.setItem("sferum_theme_v5", next);
+    localStorage.setItem("sferum_theme_v7", next);
   } catch (e) {}
+  if (typeof showToast === "function") {
+    showToast(next === "dark" ? "Тёмная тема" : "Светлая тема");
+  }
 }
 
 function applyTheme(theme) {
@@ -48,6 +61,7 @@ function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", safeTheme);
   document.documentElement.style.colorScheme = safeTheme;
   if (document.body) {
+    document.body.setAttribute("data-theme", safeTheme);
     document.body.style.colorScheme = safeTheme;
   }
   const metaTheme = document.getElementById("meta-theme-color");

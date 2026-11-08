@@ -206,7 +206,7 @@ async def on_bot_started(event: BotStarted):
         await event.bot.send_message(chat_id=chat_target, text=text, attachments=[kb.as_markup()])
 
 @dp.message_created(CommandStart())
-@dp.message_created(Command("start"))
+@dp.message_created(Command(["start", "start@ideya_fiks_59_bot"]))
 async def on_start_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
@@ -236,7 +236,7 @@ async def on_start_command(event: MessageCreated):
     )
     await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
-@dp.message_created(Command("help"))
+@dp.message_created(Command(["help", "help@ideya_fiks_59_bot"]))
 async def on_help_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
@@ -255,7 +255,7 @@ async def on_help_command(event: MessageCreated):
     )
     await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
-@dp.message_created(Command("manage"))
+@dp.message_created(Command(["manage", "manage@ideya_fiks_59_bot"]))
 async def on_manage_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
@@ -283,7 +283,7 @@ async def on_manage_command(event: MessageCreated):
 
     await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
-@dp.message_created(Command("ask"))
+@dp.message_created(Command(["ask", "ask@ideya_fiks_59_bot"]))
 async def on_ask_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
@@ -294,8 +294,12 @@ async def on_ask_command(event: MessageCreated):
     owner_id = str(event.chat.owner_id) if event.chat and getattr(event.chat, "owner_id", None) else None
 
     raw_text = event.message.body.text if event.message and event.message.body else ""
-    parts = raw_text.split(maxsplit=1)
-    question_text = parts[1].strip() if len(parts) > 1 else ""
+    words = raw_text.strip().split()
+    if words and words[0].startswith("@"):
+        words = words[1:]
+    if words and (words[0].lower() == "/ask" or words[0].lower().startswith("/ask@")):
+        words = words[1:]
+    question_text = " ".join(words).strip()
 
     if not question_text:
         await event.message.reply(
@@ -551,14 +555,31 @@ async def on_callback_query(event: MessageCallback):
                 await event.ack(notification=f"Ошибка: {e}")
                 return
 
+        edited = False
         try:
             await event.edit(
                 text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!",
                 attachments=[],
                 notification="Помощь принята!",
             )
-        except Exception:
-            await event.ack(notification="Помощь принята!")
+            edited = True
+        except Exception as e_edit:
+            print(f"[БОТ] event.edit не удался: {e_edit}")
+            try:
+                await event.ack(notification="Помощь принята!")
+            except Exception:
+                pass
+
+        if not edited and user_id:
+            try:
+                target_uid = int(user_id) if user_id.isdigit() else None
+                if target_uid:
+                    await event.bot.send_message(
+                        user_id=target_uid,
+                        text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!",
+                    )
+            except Exception as e_send:
+                print(f"[БОТ] send_message fallback: {e_send}")
 
         try:
             chat_target = int(question.group_chat_id) if str(question.group_chat_id).isdigit() else question.group_chat_id

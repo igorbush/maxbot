@@ -1,4 +1,4 @@
-:root, [data-theme="light"] {
+:root {
   color-scheme: light;
   --sferum-bg: #edeef0;
   --sferum-card-bg: #ffffff;
@@ -29,7 +29,33 @@
   --sferum-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-[data-theme="dark"] {
+html[data-theme="light"], body[data-theme="light"], [data-theme="light"] {
+  color-scheme: light;
+  --sferum-bg: #edeef0;
+  --sferum-card-bg: #ffffff;
+  --sferum-border: #e7e8ec;
+  --sferum-border-hover: #d3d9de;
+  --sferum-text-primary: #000000;
+  --sferum-text-secondary: #818c99;
+  --sferum-text-sub: #99a2ad;
+  --sferum-blue: #0077ff;
+  --sferum-blue-hover: #0066dd;
+  --sferum-blue-light: #ebf2ff;
+  --sferum-gold: #b45309;
+  --sferum-gold-bg: #fff8ea;
+  --sferum-gold-border: #ffe1a6;
+  --sferum-green: #166534;
+  --sferum-green-bg: #ebf8eb;
+  --sferum-red: #991b1b;
+  --sferum-red-bg: #ffebeb;
+  --sferum-segmented-bg: #e4e7eb;
+  --sferum-input-bg: #f9fafb;
+  --sferum-hero-gradient: linear-gradient(135deg, #0077ff 0%, #005bd9 100%);
+  --sferum-avatar-gradient: linear-gradient(135deg, #0077ff 0%, #3b82f6 100%);
+  --sferum-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"], body[data-theme="dark"], [data-theme="dark"] {
   color-scheme: dark;
   --sferum-bg: #141415;
   --sferum-card-bg: #1e1e20;
