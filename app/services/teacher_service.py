@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -296,6 +296,13 @@ class TeacherService:
                 "active_questions": [],
                 "total_students": 0,
                 "issued_rewards": [],
+                "class_pulse": {
+                    "total_questions_week": 0,
+                    "resolved_questions_week": 0,
+                    "resolution_rate": 0,
+                    "top_helper_name": "—",
+                    "time_saved_hours": 0.0,
+                },
             }
 
         claims_query = (
@@ -412,9 +419,51 @@ class TeacherService:
 
         issued_rewards.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
+        since_week = datetime.now(timezone.utc) - timedelta(days=7)
+        total_q_week_query = select(func.count(Question.id)).where(
+            Question.group_chat_id == chat_id,
+            Question.created_at >= since_week,
+        )
+        total_q_week = (await session.execute(total_q_week_query)).scalar_one() or 0
+
+        resolved_q_week_query = select(func.count(Question.id)).where(
+            Question.group_chat_id == chat_id,
+            Question.status == "resolved",
+            Question.created_at >= since_week,
+        )
+        resolved_q_week = (await session.execute(resolved_q_week_query)).scalar_one() or 0
+
+        resolution_rate = int((resolved_q_week / total_q_week) * 100) if total_q_week > 0 else (100 if resolved_q_week > 0 else 0)
+
+        top_helper_query = (
+            select(User.display_name, func.count(Answer.id).label("cnt"))
+            .join(Answer, Answer.author_max_id == User.max_user_id)
+            .join(Question, Answer.question_id == Question.id)
+            .where(
+                Question.group_chat_id == chat_id,
+                Answer.status == "accepted",
+                Answer.created_at >= since_week,
+                User.role != "teacher",
+            )
+            .group_by(User.id)
+            .order_by(func.count(Answer.id).desc())
+            .limit(1)
+        )
+        top_helper_row = (await session.execute(top_helper_query)).first()
+        top_helper_name = top_helper_row[0] if top_helper_row else "—"
+
+        class_pulse = {
+            "total_questions_week": total_q_week,
+            "resolved_questions_week": resolved_q_week,
+            "resolution_rate": resolution_rate,
+            "top_helper_name": top_helper_name,
+            "time_saved_hours": round(resolved_q_week * 0.25, 1),
+        }
+
         return {
             "pending_claims": pending_claims,
             "active_questions": active_questions,
             "total_students": total_students,
             "issued_rewards": issued_rewards,
+            "class_pulse": class_pulse,
         }

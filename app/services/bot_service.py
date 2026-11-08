@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
-from sqlmodel import select, delete, or_, not_
+from sqlmodel import select, delete, or_, not_, func
 from maxapi import Bot, Dispatcher
 from maxapi.filters.command import Command, CommandStart
 from maxapi.types import MessageCreated, MessageCallback, BotStarted, BotAdded, UserRemoved, BotRemoved
@@ -9,11 +10,24 @@ from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 from app.config import get_settings
 from app.database.session import async_session_factory
-from app.database.models import User, Chat, ChatMember, Question, Answer, Reward, RewardClaim
+from app.database.models import User, Chat, ChatMember, Question, Answer, Reward, RewardClaim, Achievement
 from app.services.gamification import GamificationService
 
 settings = get_settings()
 dp = Dispatcher()
+
+bot_instance: Optional[Bot] = None
+
+def set_bot_instance(bot: Bot):
+    global bot_instance
+    bot_instance = bot
+
+async def send_chat_notification(chat_id: str, text: str):
+    if bot_instance and chat_id and chat_id.isdigit():
+        try:
+            await bot_instance.send_message(chat_id=int(chat_id), text=text)
+        except Exception as e:
+            print(f"[БОТ] Не удалось отправить уведомление в чат {chat_id}: {e}")
 
 def extract_display_name(user) -> str:
     if not user:
@@ -400,6 +414,115 @@ async def on_top_command(event: MessageCreated):
 
     await event.message.reply(text="\n".join(lines))
 
+async def build_weekly_digest(session, chat_id: str, chat_title: str) -> str:
+    since_week = datetime.now(timezone.utc) - timedelta(days=7)
+
+    q_res = await session.execute(
+        select(func.count(Question.id)).where(
+            Question.group_chat_id == chat_id,
+            Question.status == "resolved",
+            Question.created_at >= since_week,
+        )
+    )
+    resolved_count = q_res.scalar_one() or 0
+
+    top_helper_query = (
+        select(User.display_name, func.count(Answer.id).label("cnt"))
+        .join(Answer, Answer.author_max_id == User.max_user_id)
+        .join(Question, Answer.question_id == Question.id)
+        .where(
+            Question.group_chat_id == chat_id,
+            Answer.status == "accepted",
+            Answer.created_at >= since_week,
+            User.role != "teacher",
+        )
+        .group_by(User.id)
+        .order_by(func.count(Answer.id).desc())
+        .limit(1)
+    )
+    top_helper = (await session.execute(top_helper_query)).first()
+
+    fastest_query = (
+        select(User.display_name, Question.created_at, Answer.created_at)
+        .join(Answer, Answer.author_max_id == User.max_user_id)
+        .join(Question, Answer.question_id == Question.id)
+        .where(
+            Question.group_chat_id == chat_id,
+            Answer.status == "accepted",
+            Answer.created_at >= since_week,
+            User.role != "teacher",
+        )
+    )
+    fastest_rows = (await session.execute(fastest_query)).all()
+    fastest_helper = None
+    min_minutes = 999999
+    for name, q_dt, a_dt in fastest_rows:
+        if q_dt and a_dt:
+            mins = max(1, int((a_dt - q_dt).total_seconds() // 60))
+            if mins < min_minutes:
+                min_minutes = mins
+                fastest_helper = name
+
+    lines = [f"🏆 Итоги недели в Лиге Помощников («{chat_title}»):\n"]
+    if resolved_count == 0 and not top_helper:
+        lines.append("За прошедшую неделю в чате пока не было решённых вопросов.")
+        lines.append("\nЗадавайте вопросы через команду /ask и помогайте одноклассникам, чтобы попасть в топ!")
+    else:
+        if top_helper:
+            lines.append(f"🥇 Лучший помощник недели: {top_helper[0]} (+{top_helper[1] * 50} XP)")
+        if fastest_helper and min_minutes < 999999:
+            lines.append(f"⚡️ Самый быстрый ответ: {fastest_helper} (за {min_minutes} мин.)")
+        lines.append(f"📊 Всего решено вопросов в чате: {resolved_count}")
+        lines.append("\nСпасибо каждому за взаимную выручку и поддержку! Так держать! 👏")
+
+    return "\n".join(lines)
+
+@dp.message_created(Command(["digest", "digest@ideya_fiks_59_bot", "weekly"]))
+async def on_digest_command(event: MessageCreated):
+    chat_id = str(event.chat.chat_id) if event.chat else ""
+    chat_type = getattr(event.chat, "type", "") or ""
+    is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
+    chat_title = event.chat.title if is_group else "Учебный чат"
+
+    if not is_group:
+        await event.message.reply(text="Команда /digest доступна в учебных групповых чатах.")
+        return
+
+    async with async_session_factory() as session:
+        text = await build_weekly_digest(session, chat_id, chat_title)
+
+    await event.message.reply(text=text)
+
+async def weekly_digest_scheduler(bot: Bot):
+    last_sent_week = -1
+    while True:
+        try:
+            await asyncio.sleep(1800)
+            now = datetime.now(timezone.utc)
+            if now.weekday() == 4 and 12 <= now.hour <= 15:
+                current_cal_week = now.isocalendar()[1]
+                if current_cal_week != last_sent_week:
+                    last_sent_week = current_cal_week
+                    async with async_session_factory() as session:
+                        chats_res = await session.execute(
+                            select(Chat).where(
+                                Chat.title != "Диалог",
+                                not_(Chat.title.ilike("%диалог%")),
+                            )
+                        )
+                        chats = chats_res.scalars().all()
+                        for c in chats:
+                            if c.max_chat_id and c.max_chat_id.isdigit():
+                                digest = await build_weekly_digest(session, c.max_chat_id, c.title)
+                                try:
+                                    await bot.send_message(chat_id=int(c.max_chat_id), text=digest)
+                                except Exception:
+                                    pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[БОТ] Ошибка авто-дайджеста: {e}")
+
 @dp.message_created(Command(["ask", "ask@ideya_fiks_59_bot"]))
 async def on_ask_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
@@ -784,6 +907,19 @@ async def on_callback_query(event: MessageCallback):
 
                 await session.commit()
                 print(f"[БОТ] Помощь подтверждена: {helper_name} получил +50 XP и +1 спасибку")
+
+                new_codes = await GamificationService.evaluate_achievements(session, answer.author_max_id)
+                await session.commit()
+                if new_codes and chat_id and chat_id.isdigit():
+                    for code in new_codes:
+                        ach_res = await session.execute(select(Achievement).where(Achievement.code == code))
+                        ach_obj = ach_res.scalar_one_or_none()
+                        if ach_obj:
+                            congrats_text = f"🎉 Поздравляем! {helper_name} получил(а) достижение «{ach_obj.name_ru}» {ach_obj.icon_url or '🏆'}! Спасибо за активную помощь одноклассникам! 👏"
+                            try:
+                                await event.bot.send_message(chat_id=int(chat_id), text=congrats_text)
+                            except Exception as e_congrats:
+                                print(f"[БОТ] Не удалось отправить поздравление: {e_congrats}")
 
         if already_handled:
             if is_already_accepted:

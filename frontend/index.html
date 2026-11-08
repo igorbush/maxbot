@@ -8,7 +8,8 @@
   <meta name="theme-color" content="#edeef0" id="meta-theme-color">
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=18">
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -73,7 +74,10 @@
         <div class="hero-top">
           <div class="hero-rank-info">
             <span class="hero-sub">Звание в Лиге Помощников</span>
-            <h2 class="hero-rank" id="profile-level-title">Знаток</h2>
+            <div class="hero-title-row">
+              <h2 class="hero-rank" id="profile-level-title">Знаток</h2>
+              <span class="profile-streak-badge" id="profile-streak-badge">🔥 1 день в строю</span>
+            </div>
           </div>
           <div class="hero-level-chip" id="profile-level-num">1 уровень</div>
         </div>
@@ -197,85 +201,124 @@
     <section id="tab-teacher" class="tab-pane">
       <div class="page-title-box">
         <h2 class="page-title">Кабинет учителя</h2>
-        <p class="page-desc">Управление бонусами и одобрение заявок учеников</p>
+        <p class="page-desc">Управление бонусами и аналитика взаимовыручки</p>
       </div>
 
-      <div class="sferum-card collapsible-card" id="card-pending-claims">
-        <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-pending-claims')">
-          <div class="collapsible-header-left">
-            <span class="collapse-icon">▾</span>
-            <h3>Входящие заявки на награды</h3>
-          </div>
-          <span class="count-pill" id="pending-claims-count">0</span>
-        </div>
-        <div class="collapsible-content">
-          <div id="teacher-requests-list" class="teacher-claims-list">
-            <div class="state-loading">Загрузка заявок...</div>
-          </div>
+      <div class="segmented-wrapper">
+        <div class="segmented-control teacher-subnav">
+          <button class="seg-btn active" id="btn-tsub-overview" onclick="switchTeacherSubTab('overview')">📊 Обзор и пульс</button>
+          <button class="seg-btn" id="btn-tsub-rewards" onclick="switchTeacherSubTab('rewards')">🎁 Награды</button>
+          <button class="seg-btn" id="btn-tsub-award" onclick="switchTeacherSubTab('award')">⭐️ Вручение</button>
         </div>
       </div>
 
-      <div class="sferum-card collapsible-card collapsed" id="card-issued-rewards">
-        <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-issued-rewards')">
-          <div class="collapsible-header-left">
-            <span class="collapse-icon">▸</span>
-            <h3>Выданные награды</h3>
+      <div id="tsub-overview" class="teacher-subpane active">
+        <div class="sferum-card pulse-card" id="card-class-pulse">
+          <div class="card-header-row">
+            <div class="pulse-title-wrap">
+              <span class="pulse-icon">📈</span>
+              <h3>Пульс взаимопомощи</h3>
+            </div>
+            <span class="pulse-badge" id="pulse-rate-badge">100%</span>
           </div>
-          <span class="count-pill" id="teacher-issued-count">0</span>
-        </div>
-        <div class="collapsible-content">
-          <p class="card-subtext">История выданных бонусов и одобренных наград ученикам.</p>
-          <div id="teacher-issued-list" class="teacher-issued-list">
-            <div class="state-loading">Загрузка истории...</div>
+          <p class="pulse-summary" id="pulse-summary-text">Загрузка статистики класса...</p>
+          <div class="pulse-metrics-grid">
+            <div class="pulse-metric-item">
+              <span class="pulse-metric-val" id="pulse-resolved-val">0</span>
+              <span class="pulse-metric-lbl">Решено за неделю</span>
+            </div>
+            <div class="pulse-metric-item">
+              <span class="pulse-metric-val" id="pulse-time-val">0 ч.</span>
+              <span class="pulse-metric-lbl">Экономия учителя</span>
+            </div>
+            <div class="pulse-metric-item">
+              <span class="pulse-metric-val" id="pulse-leader-val">—</span>
+              <span class="pulse-metric-lbl">Лидер недели</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="sferum-card">
-        <h3>Вручить «Выбор учителя»</h3>
-        <p class="card-subtext">Отметьте ученика за самое понятное объяснение (+100 XP и +20 спасибок).</p>
-        <div class="award-form-row">
-          <select id="teacher-award-student" class="sferum-input flex-1">
-            <option value="">Выберите ученика...</option>
-          </select>
-          <button type="button" class="sferum-btn btn-primary" onclick="handleAwardTeacherBadge()">Вручить</button>
-        </div>
-      </div>
-
-      <div class="sferum-card collapsible-card collapsed" id="card-teacher-rewards">
-        <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-teacher-rewards')">
-          <div class="collapsible-header-left">
-            <span class="collapse-icon">▸</span>
-            <h3>Награды в этом чате</h3>
+        <div class="sferum-card collapsible-card" id="card-pending-claims">
+          <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-pending-claims')">
+            <div class="collapsible-header-left">
+              <span class="collapse-icon">▾</span>
+              <h3>Входящие заявки на награды</h3>
+            </div>
+            <span class="count-pill" id="pending-claims-count">0</span>
           </div>
-          <span class="count-pill" id="teacher-rewards-count">0</span>
-        </div>
-        <div class="collapsible-content">
-          <p class="card-subtext">Активные бонусы от учителей. Вы можете удалить неактуальные награды.</p>
-          <div id="teacher-rewards-list" class="teacher-rewards-list">
-            <div class="state-loading">Загрузка наград...</div>
+          <div class="collapsible-content">
+            <div id="teacher-requests-list" class="teacher-claims-list">
+              <div class="state-loading">Загрузка заявок...</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="sferum-card">
-        <h3>Добавить новую награду</h3>
-        <p class="card-subtext">Создайте награду для выбранного чата.</p>
-        <form id="create-reward-form" onsubmit="handleCreateReward(event)">
-          <div class="form-field">
-            <label class="field-label">Название награды</label>
-            <input type="text" id="rew-title" class="sferum-input" placeholder="Например: Освобождение от одного устного ДЗ" required>
+      <div id="tsub-rewards" class="teacher-subpane hidden">
+        <div class="sferum-card collapsible-card" id="card-teacher-rewards">
+          <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-teacher-rewards')">
+            <div class="collapsible-header-left">
+              <span class="collapse-icon">▾</span>
+              <h3>Награды в этом чате</h3>
+            </div>
+            <span class="count-pill" id="teacher-rewards-count">0</span>
           </div>
-          <div class="form-field">
-            <label class="field-label">Описание</label>
-            <input type="text" id="rew-desc" class="sferum-input" placeholder="Условия и порядок применения" required>
+          <div class="collapsible-content">
+            <p class="card-subtext">Активные бонусы от учителей. Вы можете удалить неактуальные награды.</p>
+            <div id="teacher-rewards-list" class="teacher-rewards-list">
+              <div class="state-loading">Загрузка наград...</div>
+            </div>
           </div>
-          <div class="form-field">
-            <label class="field-label">Стоимость (спасибки)</label>
-            <input type="number" id="rew-price" class="sferum-input" value="5" min="1" max="500" required>
+        </div>
+
+        <div class="sferum-card">
+          <h3>Добавить новую награду</h3>
+          <p class="card-subtext">Создайте награду для выбранного чата.</p>
+          <form id="create-reward-form" onsubmit="handleCreateReward(event)">
+            <div class="form-field">
+              <label class="field-label">Название награды</label>
+              <input type="text" id="rew-title" class="sferum-input" placeholder="Например: Освобождение от одного устного ДЗ" required>
+            </div>
+            <div class="form-field">
+              <label class="field-label">Описание</label>
+              <input type="text" id="rew-desc" class="sferum-input" placeholder="Условия и порядок применения" required>
+            </div>
+            <div class="form-field">
+              <label class="field-label">Стоимость (спасибки)</label>
+              <input type="number" id="rew-price" class="sferum-input" value="5" min="1" max="500" required>
+            </div>
+            <button type="submit" class="sferum-btn btn-primary full-width">Опубликовать награду</button>
+          </form>
+        </div>
+      </div>
+
+      <div id="tsub-award" class="teacher-subpane hidden">
+        <div class="sferum-card">
+          <h3>Вручить «Выбор учителя»</h3>
+          <p class="card-subtext">Отметьте ученика за самое понятное объяснение (+100 XP и +20 спасибок).</p>
+          <div class="award-form-row">
+            <select id="teacher-award-student" class="sferum-input flex-1">
+              <option value="">Выберите ученика...</option>
+            </select>
+            <button type="button" class="sferum-btn btn-primary" onclick="handleAwardTeacherBadge()">Вручить</button>
           </div>
-          <button type="submit" class="sferum-btn btn-primary full-width">Опубликовать награду</button>
-        </form>
+        </div>
+
+        <div class="sferum-card collapsible-card collapsed" id="card-issued-rewards">
+          <div class="card-header-row collapsible-trigger" onclick="toggleCardCollapse('card-issued-rewards')">
+            <div class="collapsible-header-left">
+              <span class="collapse-icon">▸</span>
+              <h3>Выданные награды</h3>
+            </div>
+            <span class="count-pill" id="teacher-issued-count">0</span>
+          </div>
+          <div class="collapsible-content">
+            <p class="card-subtext">История выданных бонусов и одобренных наград ученикам.</p>
+            <div id="teacher-issued-list" class="teacher-issued-list">
+              <div class="state-loading">Загрузка истории...</div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -349,6 +392,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>

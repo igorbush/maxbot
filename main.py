@@ -10,7 +10,7 @@ from maxapi.types import BotCommand
 
 from app.config import get_settings
 from app.database.session import init_db
-from app.services.bot_service import dp, sync_bot_chats
+from app.services.bot_service import dp, sync_bot_chats, set_bot_instance, weekly_digest_scheduler
 from app.api.webapp import router as webapp_router
 
 settings = get_settings()
@@ -24,11 +24,12 @@ async def register_bot_commands(target_bot: Bot):
         commands = [
             BotCommand(name="ask", description="Задать вопрос классу"),
             BotCommand(name="top", description="Рейтинг помощников этого чата"),
+            BotCommand(name="digest", description="Итоги недели в этом чате"),
             BotCommand(name="start", description="Главное меню и профиль"),
             BotCommand(name="help", description="Инструкция по взаимопомощи"),
         ]
         await target_bot.set_commands(*commands)
-        print("[БОТ] Команды бота (/ask, /top, /start, /help) зарегистрированы в MAX API")
+        print("[БОТ] Команды бота (/ask, /top, /digest, /start, /help) зарегистрированы в MAX API")
     except Exception as e:
         print(f"[БОТ] Регистрация команд: {e}")
 
@@ -36,7 +37,9 @@ async def register_bot_commands(target_bot: Bot):
 async def lifespan(app: FastAPI):
     await init_db()
     bot_task = None
+    digest_task = None
     if bot and settings.MAX_BOT_TOKEN:
+        set_bot_instance(bot)
         try:
             bot.me = await bot.get_me()
             print(f"[БОТ] Авторизован как @{bot.me.username} ({bot.me.first_name})")
@@ -46,6 +49,7 @@ async def lifespan(app: FastAPI):
         await sync_bot_chats(bot)
         print("[БОТ] Запуск опроса MAX API (библиотека maxapi)...")
         bot_task = asyncio.create_task(dp.start_polling(bot))
+        digest_task = asyncio.create_task(weekly_digest_scheduler(bot))
     yield
     if bot:
         print("[БОТ] Остановка опроса MAX API...")
@@ -54,6 +58,12 @@ async def lifespan(app: FastAPI):
         bot_task.cancel()
         try:
             await bot_task
+        except asyncio.CancelledError:
+            pass
+    if digest_task:
+        digest_task.cancel()
+        try:
+            await digest_task
         except asyncio.CancelledError:
             pass
 

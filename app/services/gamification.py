@@ -371,3 +371,30 @@ class GamificationService:
 
         return newly_awarded_codes
 
+    @classmethod
+    async def calculate_streak(cls, session: AsyncSession, user_id: str) -> int:
+        answers_query = (
+            select(Answer.created_at)
+            .where(
+                Answer.author_max_id == user_id,
+                Answer.status == "accepted",
+            )
+            .order_by(Answer.created_at.desc())
+        )
+        res = await session.execute(answers_query)
+        dates = sorted(set(to_school_date(dt) for dt in res.scalars().all()), reverse=True)
+        if not dates:
+            return 0
+        today = to_school_date(datetime.now(timezone.utc))
+        if dates[0] < today - timedelta(days=1):
+            return 0
+        expected = dates[0]
+        streak = 0
+        for d in dates:
+            if d == expected:
+                streak += 1
+                expected -= timedelta(days=1)
+            else:
+                break
+        return streak
+

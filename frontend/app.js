@@ -18,6 +18,30 @@ function toggleCardCollapse(cardId) {
   }
 }
 
+function launchConfetti() {
+  if (typeof confetti === "function") {
+    try {
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 },
+        colors: ["#2d78f0", "#ffb300", "#4bb34b", "#ffffff", "#70a7ff"],
+        disableForReducedMotion: true,
+      });
+    } catch (e) {}
+  }
+}
+
+function switchTeacherSubTab(subTabName) {
+  document.querySelectorAll(".teacher-subpane").forEach(pane => pane.classList.add("hidden"));
+  const target = document.getElementById(`tsub-${subTabName}`);
+  if (target) target.classList.remove("hidden");
+
+  document.querySelectorAll(".teacher-subnav .seg-btn").forEach(btn => btn.classList.remove("active"));
+  const btn = document.getElementById(`btn-tsub-${subTabName}`);
+  if (btn) btn.classList.add("active");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
   initUserFromMAX();
@@ -212,6 +236,22 @@ async function loadProfile() {
     document.getElementById("profile-helped").textContent = data.helped_count || 0;
     document.getElementById("profile-questions").textContent = data.questions_count || 0;
     document.getElementById("profile-rank").textContent = data.role === "teacher" ? "—" : `#${data.rank_position || 1}`;
+
+    const streakElem = document.getElementById("profile-streak-badge");
+    if (streakElem) {
+      if (data.role === "teacher") {
+        streakElem.textContent = "🎓 Наставник";
+        streakElem.className = "profile-streak-badge teacher-badge";
+      } else if (data.streak_days && data.streak_days > 0) {
+        const d = data.streak_days;
+        const dStr = d === 1 ? "день" : (d < 5 ? "дня" : "дней");
+        streakElem.textContent = `🔥 ${d} ${dStr} в строю`;
+        streakElem.className = "profile-streak-badge active-streak";
+      } else {
+        streakElem.textContent = "🔥 Начни серию помощи!";
+        streakElem.className = "profile-streak-badge empty-streak";
+      }
+    }
 
     const shopCoins = document.getElementById("shop-coins");
     if (shopCoins) shopCoins.textContent = data.balance_spasibki;
@@ -585,6 +625,7 @@ async function handleClaimReward(rewardId, cost) {
     }
 
     showToast("Заявка успешно отправлена учителю!");
+    launchConfetti();
     loadProfile();
     loadRewards();
 
@@ -607,6 +648,28 @@ async function loadTeacherData() {
     const res = await fetch(url);
     if (!res.ok) throw new Error("Только для учителей");
     const overview = await res.json();
+
+    const pulse = overview.class_pulse;
+    if (pulse) {
+      const summaryText = document.getElementById("pulse-summary-text");
+      const badgeElem = document.getElementById("pulse-rate-badge");
+      const resolvedVal = document.getElementById("pulse-resolved-val");
+      const timeVal = document.getElementById("pulse-time-val");
+      const leaderVal = document.getElementById("pulse-leader-val");
+
+      if (badgeElem) badgeElem.textContent = `${pulse.resolution_rate}%`;
+      if (resolvedVal) resolvedVal.textContent = pulse.resolved_questions_week;
+      if (timeVal) timeVal.textContent = `~${pulse.time_saved_hours} ч.`;
+      if (leaderVal) leaderVal.textContent = pulse.top_helper_name || "—";
+
+      if (summaryText) {
+        if (pulse.total_questions_week === 0) {
+          summaryText.textContent = "В этом чате за последнюю неделю не было вопросов. Взаимопомощь начнётся с первого вопроса!";
+        } else {
+          summaryText.textContent = `За неделю решено ${pulse.resolved_questions_week} из ${pulse.total_questions_week} вопросов (${pulse.resolution_rate}% без участия учителя).`;
+        }
+      }
+    }
 
     const claims = overview.pending_claims || [];
     if (badgeCount) badgeCount.textContent = claims.length;
@@ -702,6 +765,9 @@ async function handleReviewClaim(claimId, decision) {
     });
 
     if (!res.ok) throw new Error("Ошибка обновления");
+    if (decision === "approved") {
+      launchConfetti();
+    }
     showToast(decision === "approved" ? "Заявка одобрена!" : "Заявка отклонена");
     loadTeacherData();
 
@@ -824,6 +890,7 @@ async function handleAwardTeacherBadge() {
     });
 
     if (!res.ok) throw new Error("Ошибка награждения");
+    launchConfetti();
     showToast("Бейдж «Выбор учителя» успешно вручён!");
     loadTeacherData();
 

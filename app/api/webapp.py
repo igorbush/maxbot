@@ -20,6 +20,7 @@ from app.database.session import get_db_session
 from app.services.auth import get_current_user, require_teacher
 from app.services.teacher_service import TeacherService
 from app.services.gamification import GamificationService
+from app.services.bot_service import send_chat_notification
 
 router = APIRouter(tags=["webapp"])
 
@@ -51,6 +52,7 @@ class UserProfileResponse(BaseModel):
     helped_count: int = 0
     questions_count: int = 0
     rank_position: int = 1
+    streak_days: int = 0
     chats: List[ChatItem] = []
     achievements: List[AchievementItem] = []
 
@@ -112,11 +114,19 @@ class AwardBadgeRequest(BaseModel):
     badge_code: Optional[str] = "teacher_choice"
     chat_id: Optional[str] = None
 
+class ClassPulseResponse(BaseModel):
+    total_questions_week: int = 0
+    resolved_questions_week: int = 0
+    resolution_rate: int = 0
+    top_helper_name: str = "—"
+    time_saved_hours: float = 0.0
+
 class TeacherOverviewResponse(BaseModel):
     pending_claims: List[Dict[str, Any]]
     active_questions: List[Dict[str, Any]]
     total_students: int
     issued_rewards: List[Dict[str, Any]] = []
+    class_pulse: Optional[ClassPulseResponse] = None
 
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
@@ -275,6 +285,7 @@ async def get_profile(
         current_balance = 0
         rank_pos = 0
 
+    streak_days = await GamificationService.calculate_streak(session, current_user.max_user_id)
     level = (current_user.xp // 100) + 1
     return UserProfileResponse(
         id=current_user.id,
@@ -288,6 +299,7 @@ async def get_profile(
         helped_count=helped_count,
         questions_count=questions_count,
         rank_position=rank_pos,
+        streak_days=streak_days,
         chats=user_chats,
         achievements=achievements_data,
     )
@@ -613,6 +625,7 @@ async def get_teacher_overview(
         active_questions=overview.get("active_questions", []),
         total_students=overview.get("total_students", 0),
         issued_rewards=overview.get("issued_rewards", []),
+        class_pulse=overview.get("class_pulse"),
     )
 
 @router.post("/teacher/review-claim")
@@ -701,6 +714,14 @@ async def award_teacher_badge(
         reason="Награда Выбор учителя",
         chat_id=body.chat_id if body.chat_id != "all" else None,
     )
+    if body.chat_id and body.chat_id != "all":
+        u_res = await session.execute(select(User).where(User.max_user_id == body.student_id))
+        st = u_res.scalar_one_or_none()
+        st_name = st.display_name if st else "Ученик"
+        await send_chat_notification(
+            body.chat_id,
+            f"⭐️ Педагог отметил(а) {st_name} специальной наградой «Выбор учителя» (+100 XP и +20 спасибок)! Поздравляем! 👏",
+        )
     return {"status": "ok", "awarded": new_codes}
 
 @router.get("/students")
