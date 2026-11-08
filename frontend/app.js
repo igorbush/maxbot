@@ -479,9 +479,9 @@ async function loadRewards() {
   container.innerHTML = '<div class="state-loading">Загрузка лавки...</div>';
 
   try {
-    let url = "/api/rewards";
+    let url = `/api/rewards?user_id=${encodeURIComponent(currentUserId)}`;
     if (selectedChatId && selectedChatId !== "all") {
-      url += `?chat_id=${selectedChatId}`;
+      url += `&chat_id=${encodeURIComponent(selectedChatId)}`;
     }
 
     const res = await fetch(url);
@@ -747,9 +747,9 @@ async function loadTeacherRewards() {
   if (!container) return;
 
   try {
-    let url = "/api/rewards";
+    let url = `/api/rewards?user_id=${encodeURIComponent(currentUserId)}`;
     if (teacherSelectedChatId && teacherSelectedChatId !== "all") {
-      url += `?chat_id=${teacherSelectedChatId}`;
+      url += `&chat_id=${encodeURIComponent(teacherSelectedChatId)}`;
     }
     const res = await fetch(url);
     const rewards = await res.json();

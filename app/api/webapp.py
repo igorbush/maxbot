@@ -492,9 +492,24 @@ async def get_leaderboard(
 @router.get("/rewards", response_model=List[RewardItem])
 async def get_rewards(
     chat_id: Optional[str] = Query(None),
+    current_user: Optional[User] = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     if chat_id and chat_id != "all":
+        if current_user:
+            mem_res = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == chat_id,
+                    ChatMember.user_max_id == current_user.max_user_id,
+                )
+            )
+            if mem_res.scalar_one_or_none() is None:
+                chat_res = await session.execute(
+                    select(Chat).where(Chat.max_chat_id == chat_id, Chat.owner_id == current_user.max_user_id)
+                )
+                if chat_res.scalar_one_or_none() is None:
+                    return []
+
         existing_res = await session.execute(
             select(Reward).where(Reward.is_active == True, Reward.chat_id == chat_id)
         )

@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
-from typing import Optional
-from sqlmodel import select, delete, or_
+from typing import List, Optional, Tuple
+from sqlmodel import select, delete, or_, not_
 from maxapi import Bot, Dispatcher
 from maxapi.filters.command import Command, CommandStart
-from maxapi.types import MessageCreated, MessageCallback, BotStarted, BotAdded
+from maxapi.types import MessageCreated, MessageCallback, BotStarted, BotAdded, UserRemoved, BotRemoved
 from maxapi.types import CallbackButton
 from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
@@ -33,8 +33,55 @@ def build_main_menu_keyboard(is_teacher: bool = False):
     builder = InlineKeyboardBuilder()
     builder.add(CallbackButton(text="❓ Как спросить?", payload="menu:ask_info"))
     builder.add(CallbackButton(text="👤 Мой профиль", payload="menu:profile"))
-    builder.adjust(2)
+    builder.add(CallbackButton(text="🪙 Баланс спасибок", payload="menu:balance"))
+    builder.adjust(2, 1)
     return builder
+
+async def fetch_user_chat_balances(session, bot: Optional[Bot], user_id: str) -> Tuple[List[Tuple[str, int]], int]:
+    query = (
+        select(Chat.title, ChatMember.balance_spasibki, Chat.max_chat_id)
+        .join(ChatMember, Chat.max_chat_id == ChatMember.chat_max_id)
+        .where(
+            ChatMember.user_max_id == user_id,
+            Chat.title != "Диалог",
+            not_(Chat.title.ilike("%диалог%")),
+        )
+        .order_by(Chat.title.asc())
+    )
+    res = await session.execute(query)
+    rows = res.all()
+
+    active_balances: List[Tuple[str, int]] = []
+    removed_chat_ids: List[str] = []
+
+    for title, bal, cid in rows:
+        is_member = True
+        if bot and cid and user_id and cid.isdigit() and user_id.isdigit():
+            try:
+                mem = await bot.get_chat_member(chat_id=int(cid), user_id=int(user_id))
+                if not mem:
+                    is_member = False
+            except Exception as e:
+                err_text = str(e).lower()
+                if any(k in err_text for k in ["not found", "not in chat", "forbidden", "404", "403"]):
+                    is_member = False
+
+        if not is_member:
+            removed_chat_ids.append(cid)
+        else:
+            active_balances.append((title, bal if bal is not None else 0))
+
+    if removed_chat_ids:
+        await session.execute(
+            delete(ChatMember).where(
+                ChatMember.user_max_id == user_id,
+                ChatMember.chat_max_id.in_(removed_chat_ids),
+            )
+        )
+        await session.commit()
+
+    total_spasibki = sum(b for _, b in active_balances)
+    return active_balances, total_spasibki
 
 async def send_response_or_dm(event: MessageCreated, text: str, kb=None, is_group: bool = False):
     attachments = [kb.as_markup()] if kb else None
@@ -182,6 +229,31 @@ async def on_bot_added(event: BotAdded):
     except Exception as e:
         print(f"[БОТ] Ошибка регистрации чата: {e}")
 
+@dp.user_removed()
+async def on_user_removed(event: UserRemoved):
+    chat_id = str(event.chat_id)
+    user_id = str(event.user.user_id) if event.user else ""
+    if chat_id and user_id:
+        async with async_session_factory() as session:
+            await session.execute(
+                delete(ChatMember).where(
+                    ChatMember.chat_max_id == chat_id,
+                    ChatMember.user_max_id == user_id,
+                )
+            )
+            await session.commit()
+            print(f"[БОТ] Участник {user_id} удалён из чата {chat_id}")
+
+@dp.bot_removed()
+async def on_bot_removed(event: BotRemoved):
+    chat_id = str(event.chat_id)
+    if chat_id:
+        async with async_session_factory() as session:
+            await session.execute(delete(ChatMember).where(ChatMember.chat_max_id == chat_id))
+            await session.execute(delete(Chat).where(Chat.max_chat_id == chat_id))
+            await session.commit()
+            print(f"[БОТ] Бот удалён из чата {chat_id}")
+
 @dp.bot_started()
 async def on_bot_started(event: BotStarted):
     user_id = str(event.from_user.user_id) if event.from_user else ""
@@ -252,6 +324,38 @@ async def on_help_command(event: MessageCreated):
         f"5. Команда /top в групповом чате выводит рейтинг помощников класса."
     )
     await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
+
+@dp.message_created(Command(["balance", "balance@ideya_fiks_59_bot", "spasibki", "spasibki@ideya_fiks_59_bot"]))
+async def on_balance_command(event: MessageCreated):
+    user_id = str(event.from_user.user_id) if event.from_user else ""
+    user_name = extract_display_name(event.from_user)
+    chat_type = getattr(event.chat, "type", "") or ""
+    is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
+
+    if is_group:
+        await event.message.reply(
+            text=f"{user_name}, баланс спасибок по каждому чату доступен в личном диалоге с ботом."
+        )
+        return
+
+    async with async_session_factory() as session:
+        active_balances, total_spasibki = await fetch_user_chat_balances(session, event.bot, user_id)
+
+    kb = build_main_menu_keyboard()
+    if not active_balances:
+        balance_text = (
+            "🪙 Баланс спасибок:\n\n"
+            "Вы пока не состоите в активных учебных чатах с начисленными спасибками.\n\n"
+            "Помогайте одноклассникам в группах, отвечая на вопросы реплаем, чтобы заработать спасибки!"
+        )
+    else:
+        lines = ["🪙 Ваш баланс спасибок по чатам:\n"]
+        for title, bal in active_balances:
+            lines.append(f"• «{title}»: {bal} спасибок")
+        lines.append(f"\nВсего: {total_spasibki} спасибок")
+        balance_text = "\n".join(lines)
+
+    await event.message.answer(text=balance_text, attachments=[kb.as_markup()])
 
 @dp.message_created(Command(["top", "top@ideya_fiks_59_bot", "rating", "rating@ideya_fiks_59_bot"]))
 async def on_top_command(event: MessageCreated):
@@ -751,18 +855,40 @@ async def on_callback_query(event: MessageCallback):
             u = res_user.scalar_one_or_none()
             rank_name = u.rank if u else "Любитель"
             xp_val = u.xp if u else 0
-            coins_val = u.balance_spasibki if u else 0
+            active_balances, total_spasibki = await fetch_user_chat_balances(session, event.bot, user_id)
 
         profile_text = (
             f"Личный профиль:\n\n"
             f"Имя: {user_name}\n"
             f"Звание: {rank_name}\n"
             f"Опыт: {xp_val} XP\n"
-            f"Баланс: {coins_val} спасибок\n\n"
-            f"Используйте веб-сервис Лиги Помощников для выбора наград и просмотра рейтинга ваших чатов."
+            f"Всего спасибок: {total_spasibki}\n\n"
+            f"Используйте кнопку «🪙 Баланс спасибок», чтобы посмотреть остаток по каждому чату отдельно, или веб-сервис Лиги Помощников."
         )
         try:
             await event.edit(text=profile_text, attachments=[kb.as_markup()])
+        except Exception:
+            await event.ack()
+
+    elif payload == "menu:balance":
+        async with async_session_factory() as session:
+            active_balances, total_spasibki = await fetch_user_chat_balances(session, event.bot, user_id)
+
+        if not active_balances:
+            balance_text = (
+                "🪙 Баланс спасибок:\n\n"
+                "Вы пока не состоите в активных учебных чатах с начисленными спасибками.\n\n"
+                "Помогайте одноклассникам в группах, отвечая на вопросы реплаем, чтобы заработать спасибки!"
+            )
+        else:
+            lines = ["🪙 Ваш баланс спасибок по чатам:\n"]
+            for title, bal in active_balances:
+                lines.append(f"• «{title}»: {bal} спасибок")
+            lines.append(f"\nВсего: {total_spasibki} спасибок")
+            balance_text = "\n".join(lines)
+
+        try:
+            await event.edit(text=balance_text, attachments=[kb.as_markup()])
         except Exception:
             await event.ack()
 

@@ -70,6 +70,8 @@ class TeacherService:
                 )
             )
             member = mem_res.scalar_one_or_none()
+            if member is None:
+                raise ValueError("Вы не являетесь участником этого чата")
 
         current_balance = member.balance_spasibki if member is not None else student.balance_spasibki
         if current_balance < reward.cost_spasibki:
