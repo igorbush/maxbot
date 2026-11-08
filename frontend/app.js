@@ -1,5 +1,6 @@
 let currentUserId = "";
 let currentUserDisplayName = "";
+let currentUserAvatar = "";
 let currentUserData = null;
 let availableChats = [];
 let selectedChatId = "all";
@@ -131,6 +132,10 @@ function applyTheme(theme) {
 async function initUserFromMAX() {
   const urlParams = new URLSearchParams(window.location.search);
   const urlUserId = urlParams.get("user_id");
+  const urlAvatar = urlParams.get("avatar_url") || urlParams.get("photo_url") || urlParams.get("avatar");
+  if (urlAvatar) {
+    currentUserAvatar = urlAvatar;
+  }
 
   if (window.WebApp && window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user) {
     const maxUser = window.WebApp.initDataUnsafe.user;
@@ -139,21 +144,28 @@ async function initUserFromMAX() {
     const fName = maxUser.first_name || "";
     const lName = maxUser.last_name || "";
     const builtName = `${fName} ${lName}`.trim() || maxUser.username || "";
+    const avatarUrl = maxUser.photo_url || maxUser.avatar_url || maxUser.avatar || urlAvatar || "";
+    if (avatarUrl) {
+      currentUserAvatar = avatarUrl;
+    }
     if (builtName) {
       currentUserDisplayName = builtName;
-      syncUserWithBackend(maxUser.id, fName, lName, maxUser.username);
     }
+    syncUserWithBackend(maxUser.id, fName, lName, maxUser.username, avatarUrl);
 
     const demoBar = document.getElementById("demo-bar");
     if (demoBar) demoBar.style.display = "none";
   } else if (urlUserId) {
     currentUserId = String(urlUserId);
+    if (urlAvatar) {
+      syncUserWithBackend(currentUserId, "", "", "", urlAvatar);
+    }
     const demoSelect = document.getElementById("demo-user-select");
     if (demoSelect) demoSelect.value = currentUserId;
   }
 }
 
-async function syncUserWithBackend(userId, firstName, lastName, username) {
+async function syncUserWithBackend(userId, firstName, lastName, username, avatarUrl) {
   try {
     await fetch("/api/sync-user", {
       method: "POST",
@@ -163,6 +175,7 @@ async function syncUserWithBackend(userId, firstName, lastName, username) {
         first_name: firstName,
         last_name: lastName,
         username: username,
+        avatar_url: avatarUrl || null,
       }),
     });
   } catch (err) {}
@@ -204,6 +217,9 @@ async function loadProfile() {
     if (currentUserDisplayName) {
       url += `&display_name=${encodeURIComponent(currentUserDisplayName)}`;
     }
+    if (currentUserAvatar) {
+      url += `&avatar_url=${encodeURIComponent(currentUserAvatar)}`;
+    }
 
     const res = await fetch(url);
     if (!res.ok) throw new Error("Profile error");
@@ -224,7 +240,14 @@ async function loadProfile() {
     }
 
     document.getElementById("header-coins").textContent = data.balance_spasibki;
-    document.getElementById("header-avatar").textContent = getInitials(data.display_name);
+    const avatarElem = document.getElementById("header-avatar");
+    if (avatarElem) {
+      if (data.avatar_url) {
+        avatarElem.innerHTML = `<img src="${escapeHtml(data.avatar_url)}" alt="">`;
+      } else {
+        avatarElem.textContent = getInitials(data.display_name);
+      }
+    }
 
     document.getElementById("profile-level-title").textContent = data.role === "teacher" ? "Преподаватель" : data.rank;
     document.getElementById("profile-level-num").textContent = data.role === "teacher" ? "Наставник" : `${data.level} уровень`;
@@ -455,11 +478,14 @@ async function loadLeaderboard() {
 
       const isCurrent = String(item.max_user_id) === String(currentUserId);
       const initials = getInitials(item.display_name);
+      const avatarContent = item.avatar_url
+        ? `<img src="${escapeHtml(item.avatar_url)}" alt="">`
+        : initials;
 
       return `
         <div class="leader-card ${isCurrent ? 'current-user' : ''}">
           <div class="leader-rank-col ${topClass}">${rankText}</div>
-          <div class="leader-avatar">${initials}</div>
+          <div class="leader-avatar">${avatarContent}</div>
           <div class="leader-details">
             <div class="leader-name">${escapeHtml(item.display_name)}</div>
             <div class="leader-meta">${escapeHtml(item.rank)}</div>
@@ -690,7 +716,7 @@ async function loadTeacherData() {
         if (pulse.total_questions_week === 0) {
           summaryText.textContent = "В этом чате за последнюю неделю не было вопросов. Взаимопомощь начнётся с первого вопроса!";
         } else {
-          summaryText.textContent = `За неделю решено ${pulse.resolved_questions_week} из ${pulse.total_questions_week} вопросов (${pulse.resolution_rate}% без участия учителя).`;
+          summaryText.textContent = `За неделю решено ${pulse.resolved_questions_week} из ${pulse.total_questions_week} вопросов (${pulse.resolution_rate}% решено ребятами).`;
         }
       }
     }

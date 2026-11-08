@@ -43,6 +43,16 @@ def extract_display_name(user) -> str:
     user_id = getattr(user, "user_id", "")
     return f"Участник {user_id}"
 
+def extract_avatar_url(user) -> Optional[str]:
+    if not user:
+        return None
+    return (
+        getattr(user, "photo_url", None)
+        or getattr(user, "avatar_url", None)
+        or getattr(user, "avatar", None)
+        or getattr(user, "photo", None)
+    )
+
 def build_main_menu_keyboard(is_teacher: bool = False):
     builder = InlineKeyboardBuilder()
     builder.add(CallbackButton(text="❓ Как спросить?", payload="menu:ask_info"))
@@ -130,6 +140,7 @@ async def ensure_user_and_chat(
     owner_id: Optional[str] = None,
     is_admin: bool = False,
     is_group: bool = False,
+    avatar_url: Optional[str] = None,
 ):
     res_user = await session.execute(select(User).where(User.max_user_id == user_id))
     user = res_user.scalar_one_or_none()
@@ -140,6 +151,7 @@ async def ensure_user_and_chat(
         user = User(
             max_user_id=user_id,
             display_name=display_name,
+            avatar_url=avatar_url,
             role="teacher" if is_teacher else "student",
             balance_spasibki=0 if is_teacher else 10,
             xp=0 if is_teacher else 100,
@@ -149,6 +161,8 @@ async def ensure_user_and_chat(
     else:
         if display_name and not display_name.startswith("Участник "):
             user.display_name = display_name
+        if avatar_url:
+            user.avatar_url = avatar_url
         if is_teacher and user.role != "teacher":
             user.role = "teacher"
             user.balance_spasibki = 0
@@ -245,6 +259,21 @@ async def on_bot_added(event: BotAdded):
                 pass
 
             await session.commit()
+
+            if chat_id and chat_id.isdigit():
+                welcome_group_text = (
+                    f"👋 Всем привет! Я бот «Лига Помощников» 🎓\n\n"
+                    f"В этом учебном чате теперь работает школьная взаимовыручка!\n\n"
+                    f"• Задать вопрос классу: /ask <текст вопроса>\n"
+                    f"• Помочь однокласснику: ответьте на вопрос реплаем (Reply)\n"
+                    f"• Рейтинг лучших помощников: команда /top\n"
+                    f"• Итоги недели: команда /digest\n\n"
+                    f"Помогайте одноклассникам, получайте XP и спасибки! 🚀"
+                )
+                try:
+                    await event.bot.send_message(chat_id=int(chat_id), text=welcome_group_text)
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[БОТ] Ошибка регистрации чата: {e}")
 
@@ -277,19 +306,32 @@ async def on_bot_removed(event: BotRemoved):
 async def on_bot_started(event: BotStarted):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
+    avatar_url = extract_avatar_url(event.from_user)
     print(f"[БОТ] Бот запущен пользователем {user_name} (ID: {user_id})")
 
     async with async_session_factory() as session:
-        await ensure_user_and_chat(session, user_id=user_id, display_name=user_name, is_group=False)
+        await ensure_user_and_chat(
+            session,
+            user_id=user_id,
+            display_name=user_name,
+            is_group=False,
+            avatar_url=avatar_url,
+        )
 
     kb = build_main_menu_keyboard()
     text = (
-        f"Здравствуйте, {user_name}!\n\n"
-        f"«Лига Помощников» — бот взаимопомощи в мессенджере MAX.\n\n"
-        f"• Задавайте вопросы командой /ask в учебном чате группы.\n"
-        f"• Отвечайте реплаем на вопросы одноклассников, получайте XP и спасибки.\n"
-        f"• Рейтинг класса можно посмотреть прямо в чате командой /top.\n\n"
-        f"Используйте кнопки под сообщением для просмотра профиля и справки:"
+        f"👋 Здравствуйте, {user_name}!\n\n"
+        f"Добро пожаловать в «Лигу Помощников» — школьный сервис взаимовыручки в мессенджере MAX! 🎓\n\n"
+        f"Здесь одноклассники объединяются, чтобы помогать друг другу с уроками и домашними заданиями, "
+        f"копят баллы опыта (XP), соревнуются в рейтинге и получают спасибки 🪙, которые можно обменивать на награды от учителей.\n\n"
+        f"🚀 Как это работает:\n"
+        f"1. Добавьте бота в ваш групповой учебный чат класса.\n"
+        f"2. Чтобы задать вопрос классу, отправьте в группе:\n"
+        f"   /ask <текст вашего вопроса>\n"
+        f"3. Отвечайте на вопросы одноклассников обычным реплаем (Reply).\n"
+        f"4. Когда автор подтверждает ответ кнопкой «✅ Помог», помощник получает +50 XP и +1 спасибку!\n"
+        f"5. Команда /top в чате покажет лучших помощников класса.\n\n"
+        f"Используйте кнопки ниже для перехода в личный профиль или проверки баланса спасибок:"
     )
     if event.chat:
         chat_target = int(event.chat.chat_id) if str(event.chat.chat_id).isdigit() else event.chat.chat_id
@@ -300,6 +342,7 @@ async def on_bot_started(event: BotStarted):
 async def on_start_command(event: MessageCreated):
     user_id = str(event.from_user.user_id) if event.from_user else ""
     user_name = extract_display_name(event.from_user)
+    avatar_url = extract_avatar_url(event.from_user)
     chat_id = str(event.chat.chat_id) if event.chat else ""
     chat_type = getattr(event.chat, "type", "") or ""
     is_group = bool(chat_type in ("chat", "group", "channel") and getattr(event.chat, "title", None))
@@ -317,13 +360,31 @@ async def on_start_command(event: MessageCreated):
             chat_title=chat_title,
             owner_id=owner_id,
             is_group=is_group,
+            avatar_url=avatar_url,
         )
 
     kb = build_main_menu_keyboard()
-    text = (
-        f"Здравствуйте, {user_name}!\n\n"
-        f"Лига Помощников готова к работе. Выберите действие на клавиатуре бота:"
-    )
+    if is_group:
+        text = (
+            f"Здравствуйте, {user_name}!\n\n"
+            f"«Лига Помощников» активна в этом чате. Задавайте вопросы через команду /ask или смотрите рейтинг через /top.\n\n"
+            f"Для просмотра профиля и баланса спасибок откройте личный диалог с ботом."
+        )
+    else:
+        text = (
+            f"👋 Здравствуйте, {user_name}!\n\n"
+            f"Добро пожаловать в «Лигу Помощников» — школьный сервис взаимовыручки в мессенджере MAX! 🎓\n\n"
+            f"Здесь одноклассники объединяются, чтобы помогать друг другу с уроками и домашними заданиями, "
+            f"копят баллы опыта (XP), соревнуются в рейтинге и получают спасибки 🪙, которые можно обменивать на награды от учителей.\n\n"
+            f"🚀 Как это работает:\n"
+            f"1. Добавьте бота в ваш групповой учебный чат класса.\n"
+            f"2. Чтобы задать вопрос классу, отправьте в группе:\n"
+            f"   /ask <текст вашего вопроса>\n"
+            f"3. Отвечайте на вопросы одноклассников обычным реплаем (Reply).\n"
+            f"4. Когда автор подтверждает ответ кнопкой «✅ Помог», помощник получает +50 XP и +1 спасибку!\n"
+            f"5. Команда /top в чате покажет лучших помощников класса.\n\n"
+            f"Используйте кнопки ниже для перехода в личный профиль или проверки баланса спасибок:"
+        )
     await send_response_or_dm(event, text=text, kb=kb, is_group=is_group)
 
 @dp.message_created(Command(["help", "help@ideya_fiks_59_bot"]))
@@ -593,6 +654,7 @@ async def on_ask_command(event: MessageCreated):
             chat_title=chat_title,
             owner_id=owner_id,
             is_group=is_group,
+            avatar_url=extract_avatar_url(event.from_user),
         )
 
         q = Question(
@@ -710,6 +772,7 @@ async def on_generic_message(event: MessageCreated):
                 owner_id=owner_id,
                 is_admin=is_owner,
                 is_group=True,
+                avatar_url=extract_avatar_url(event.from_user),
             )
 
     raw_text = event.message.body.text or ""

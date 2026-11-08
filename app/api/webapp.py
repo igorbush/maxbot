@@ -44,6 +44,7 @@ class UserProfileResponse(BaseModel):
     id: int
     max_user_id: str
     display_name: str
+    avatar_url: Optional[str] = None
     role: str
     balance_spasibki: int
     xp: int
@@ -60,6 +61,7 @@ class LeaderboardEntry(BaseModel):
     rank_position: int
     max_user_id: str
     display_name: str
+    avatar_url: Optional[str] = None
     rank: str
     xp: int
     balance_spasibki: int
@@ -108,6 +110,7 @@ class SyncUserRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 class AwardBadgeRequest(BaseModel):
     student_id: str
@@ -131,9 +134,14 @@ class TeacherOverviewResponse(BaseModel):
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
     chat_id: Optional[str] = Query(None),
+    avatar_url: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    if avatar_url and current_user.avatar_url != avatar_url:
+        current_user.avatar_url = avatar_url
+        await session.commit()
+
     bad_chats_q = select(Chat.max_chat_id).where(
         or_(Chat.title == "Диалог", Chat.title.ilike("%диалог%"))
     )
@@ -291,6 +299,7 @@ async def get_profile(
         id=current_user.id,
         max_user_id=current_user.max_user_id,
         display_name=current_user.display_name,
+        avatar_url=current_user.avatar_url,
         role=current_role,
         balance_spasibki=current_balance,
         xp=current_user.xp,
@@ -317,6 +326,7 @@ async def sync_user(
         user = User(
             max_user_id=uid,
             display_name=full_name,
+            avatar_url=body.avatar_url,
             role="student",
             balance_spasibki=10,
             xp=100,
@@ -325,6 +335,8 @@ async def sync_user(
         session.add(user)
     else:
         user.display_name = full_name
+        if body.avatar_url:
+            user.avatar_url = body.avatar_url
     await session.commit()
     return {"status": "ok", "display_name": full_name}
 
@@ -419,6 +431,7 @@ async def get_leaderboard(
                 User.balance_spasibki,
                 User.xp,
                 (func.count(Answer.id) * 50).label("week_xp"),
+                User.avatar_url,
             )
             .join(Answer, Answer.author_max_id == User.max_user_id)
             .where(Answer.status == "accepted", Answer.created_at >= since_dt, User.role != "teacher")
@@ -440,6 +453,7 @@ async def get_leaderboard(
                     rank_position=idx,
                     max_user_id=row[0],
                     display_name=row[1],
+                    avatar_url=row[6],
                     rank=row[2],
                     xp=row[4],
                     balance_spasibki=row[3],
@@ -476,6 +490,7 @@ async def get_leaderboard(
                 rank_position=idx,
                 max_user_id=s.max_user_id,
                 display_name=s.display_name,
+                avatar_url=s.avatar_url,
                 rank=s.rank,
                 xp=s.xp,
                 balance_spasibki=bal if bal is not None else s.balance_spasibki,
@@ -499,6 +514,7 @@ async def get_leaderboard(
             rank_position=idx,
             max_user_id=s.max_user_id,
             display_name=s.display_name,
+            avatar_url=s.avatar_url,
             rank=s.rank,
             xp=s.xp,
             balance_spasibki=s.balance_spasibki,

@@ -80,6 +80,12 @@ async def init_db():
         await conn.run_sync(SQLModel.metadata.create_all)
 
     async with async_session_factory() as session:
+        try:
+            await session.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR"))
+            await session.commit()
+        except Exception:
+            pass
+
         for item in DEFAULT_ACHIEVEMENTS:
             ach_res = await session.execute(select(Achievement).where(Achievement.code == item["code"]))
             ach_obj = ach_res.scalar_one_or_none()
