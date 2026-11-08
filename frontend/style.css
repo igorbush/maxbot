@@ -1,4 +1,5 @@
 :root, [data-theme="light"] {
+  color-scheme: light;
   --sferum-bg: #edeef0;
   --sferum-card-bg: #ffffff;
   --sferum-border: #e7e8ec;
@@ -29,6 +30,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --sferum-bg: #141415;
   --sferum-card-bg: #1e1e20;
   --sferum-border: #2e2e32;
@@ -61,13 +63,15 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-body {
+html, body {
   background-color: var(--sferum-bg);
   color: var(--sferum-text-primary);
   min-height: 100vh;
+}
+
+body {
   padding-bottom: calc(var(--sferum-tabbar-height) + env(safe-area-inset-bottom, 16px) + 20px);
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .demo-bar {

@@ -521,16 +521,22 @@ async def on_callback_query(event: MessageCallback):
         async with async_session_factory() as session:
             res_ans = await session.execute(select(Answer).where(Answer.id == ans_id))
             answer = res_ans.scalar_one_or_none()
-            if not answer or answer.status != "pending":
-                if event.callback and event.callback.callback_id:
-                    await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответ уже обработан.")
+            if not answer:
+                await event.ack(notification="Ответ не найден")
                 return
 
             res_q = await session.execute(select(Question).where(Question.id == answer.question_id))
             question = res_q.scalar_one_or_none()
-            if not question or str(question.author_max_id) != str(user_id):
-                if event.callback and event.callback.callback_id:
-                    await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Только автор вопроса может подтвердить помощь.")
+            if not question:
+                await event.ack(notification="Вопрос не найден")
+                return
+
+            if answer.status != "pending":
+                await event.edit(
+                    text=f"Помощь уже была принята ранее! {answer.author_name} получил(а) награду.",
+                    attachments=[],
+                    notification="Уже принято",
+                )
                 return
 
             try:
@@ -542,20 +548,17 @@ async def on_callback_query(event: MessageCallback):
                 print(f"[БОТ] Помощь подтверждена: вопрос #{question.id}, {answer.author_name} получил +50 XP и +1 спасибку")
             except Exception as e:
                 print(f"[БОТ] Ошибка award_gratitude: {e}")
-                if event.callback and event.callback.callback_id:
-                    await event.bot.send_callback(callback_id=event.callback.callback_id, notification=f"Ошибка: {e}")
+                await event.ack(notification=f"Ошибка: {e}")
                 return
 
-        if event.callback and event.callback.callback_id:
-            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Помощь принята!")
-
         try:
-            await event.message.edit(
+            await event.edit(
                 text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!",
                 attachments=[],
+                notification="Помощь принята!",
             )
         except Exception:
-            pass
+            await event.ack(notification="Помощь принята!")
 
         try:
             chat_target = int(question.group_chat_id) if str(question.group_chat_id).isdigit() else question.group_chat_id
@@ -565,8 +568,8 @@ async def on_callback_query(event: MessageCallback):
                 f"Автор {question.author_name} поблагодарил(а) за помощь."
             )
             await event.bot.send_message(chat_id=chat_target, text=celeb_text)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[БОТ] Ошибка отправки поздравления: {e}")
 
         return
 
@@ -575,21 +578,18 @@ async def on_callback_query(event: MessageCallback):
         async with async_session_factory() as session:
             res_ans = await session.execute(select(Answer).where(Answer.id == ans_id))
             answer = res_ans.scalar_one_or_none()
-            if answer:
+            if answer and answer.status == "pending":
                 answer.status = "rejected"
                 await session.commit()
 
-        if event.callback and event.callback.callback_id:
-            await event.bot.send_callback(callback_id=event.callback.callback_id, notification="Ответ отклонён")
-
         try:
-            await event.message.edit(
+            await event.edit(
                 text="Ответ отклонён. Вопрос остаётся открытым для других участников.",
                 attachments=[],
+                notification="Ответ отклонён",
             )
         except Exception:
-            pass
-
+            await event.ack(notification="Ответ отклонён")
         return
 
     kb = build_main_menu_keyboard()
@@ -602,9 +602,9 @@ async def on_callback_query(event: MessageCallback):
             f"Бот создаст карточку с вопросом. Одноклассники смогут ответить реплаем, а вы отметите лучший ответ."
         )
         try:
-            await event.message.edit(text=info_text, attachments=[kb.as_markup()])
+            await event.edit(text=info_text, attachments=[kb.as_markup()])
         except Exception:
-            pass
+            await event.ack()
 
     elif payload == "menu:profile":
         async with async_session_factory() as session:
@@ -625,9 +625,9 @@ async def on_callback_query(event: MessageCallback):
             f"Используйте команды и кнопки для навигации."
         )
         try:
-            await event.message.edit(text=profile_text, attachments=[kb.as_markup()])
+            await event.edit(text=profile_text, attachments=[kb.as_markup()])
         except Exception:
-            pass
+            await event.ack()
 
     elif payload == "menu:top":
         async with async_session_factory() as session:
@@ -645,9 +645,9 @@ async def on_callback_query(event: MessageCallback):
 
         top_text = "\n".join(lines)
         try:
-            await event.message.edit(text=top_text, attachments=[kb.as_markup()])
+            await event.edit(text=top_text, attachments=[kb.as_markup()])
         except Exception:
-            pass
+            await event.ack()
 
     elif payload == "menu:shop":
         async with async_session_factory() as session:
@@ -662,9 +662,9 @@ async def on_callback_query(event: MessageCallback):
 
         shop_text = "\n".join(lines)
         try:
-            await event.message.edit(text=shop_text, attachments=[kb.as_markup()])
+            await event.edit(text=shop_text, attachments=[kb.as_markup()])
         except Exception:
-            pass
+            await event.ack()
 
     elif payload == "menu:teacher":
         teacher_text = (
@@ -672,12 +672,12 @@ async def on_callback_query(event: MessageCallback):
             f"Педагоги могут создавать школьные награды, одобрять запросы школьников и вручать бейдж «Выбор учителя»."
         )
         try:
-            await event.message.edit(text=teacher_text, attachments=[kb.as_markup()])
+            await event.edit(text=teacher_text, attachments=[kb.as_markup()])
         except Exception:
-            pass
+            await event.ack()
 
-    if event.callback and event.callback.callback_id:
+    else:
         try:
-            await event.bot.send_callback(callback_id=event.callback.callback_id)
+            await event.ack()
         except Exception:
             pass

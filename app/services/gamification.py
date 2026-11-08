@@ -178,12 +178,8 @@ class GamificationService:
             to_school_date(event_now),
         )
 
-        if is_curfew or is_daily_limit:
-            delta_spasibki = 0
-            delta_xp = 0
-        else:
-            delta_spasibki = 1
-            delta_xp = 50
+        delta_spasibki = 1
+        delta_xp = 50
 
         user_query = select(User).where(User.max_user_id == answer.author_max_id)
         user_res = await session.execute(user_query)
@@ -192,6 +188,16 @@ class GamificationService:
             helper.balance_spasibki += delta_spasibki
             helper.xp += delta_xp
             helper.rank = cls.calculate_rank(helper.xp)
+        else:
+            helper = User(
+                max_user_id=answer.author_max_id,
+                display_name=answer.author_name or "Ученик",
+                role="student",
+                balance_spasibki=10 + delta_spasibki,
+                xp=100 + delta_xp,
+                rank=cls.calculate_rank(100 + delta_xp),
+            )
+            session.add(helper)
 
         answer.status = "accepted"
         question.status = "resolved"
@@ -209,16 +215,19 @@ class GamificationService:
         )
         session.add(audit)
 
-        await cls.evaluate_achievements(
-            session,
-            answer.author_max_id,
-            context={"question": question, "answer": answer, "now": event_now},
-        )
-        await cls.evaluate_achievements(
-            session,
-            question.author_max_id,
-            context={"question": question, "answer": answer, "now": event_now},
-        )
+        try:
+            await cls.evaluate_achievements(
+                session,
+                answer.author_max_id,
+                context={"question": question, "answer": answer, "now": event_now},
+            )
+            await cls.evaluate_achievements(
+                session,
+                question.author_max_id,
+                context={"question": question, "answer": answer, "now": event_now},
+            )
+        except Exception:
+            pass
 
         await session.commit()
         return delta_spasibki, delta_xp

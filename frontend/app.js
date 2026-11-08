@@ -15,28 +15,49 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initTheme() {
-  localStorage.removeItem("sferum_theme");
-  const savedTheme = localStorage.getItem("sferum_theme_v3");
-  if (savedTheme === "dark") {
-    applyTheme("dark");
-  } else {
-    applyTheme("light");
-  }
+  try {
+    localStorage.removeItem("sferum_theme");
+    localStorage.removeItem("sferum_theme_v2");
+    localStorage.removeItem("sferum_theme_v3");
+    localStorage.removeItem("sferum_theme_v4");
+  } catch (e) {}
+
+  let savedTheme = "light";
+  try {
+    savedTheme = localStorage.getItem("sferum_theme_v5") || "light";
+  } catch (e) {}
+
+  applyTheme(savedTheme === "dark" ? "dark" : "light");
 }
 
-function toggleTheme() {
+function toggleTheme(event) {
+  if (event) {
+    if (typeof event.preventDefault === "function") event.preventDefault();
+    if (typeof event.stopPropagation === "function") event.stopPropagation();
+  }
   const current = document.documentElement.getAttribute("data-theme") || "light";
   const next = current === "light" ? "dark" : "light";
   applyTheme(next);
-  localStorage.setItem("sferum_theme_v3", next);
+  try {
+    localStorage.setItem("sferum_theme_v5", next);
+  } catch (e) {}
 }
 
 function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
+  const safeTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", safeTheme);
+  document.documentElement.style.colorScheme = safeTheme;
+  if (document.body) {
+    document.body.style.colorScheme = safeTheme;
+  }
+  const metaTheme = document.getElementById("meta-theme-color");
+  if (metaTheme) {
+    metaTheme.setAttribute("content", safeTheme === "dark" ? "#141415" : "#edeef0");
+  }
   const sunIcon = document.getElementById("theme-icon-sun");
   const moonIcon = document.getElementById("theme-icon-moon");
   if (sunIcon && moonIcon) {
-    if (theme === "dark") {
+    if (safeTheme === "dark") {
       sunIcon.classList.remove("hidden");
       moonIcon.classList.add("hidden");
     } else {
