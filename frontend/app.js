@@ -482,9 +482,9 @@ async function loadRewards() {
         const isOwnReward = Boolean(r.created_by_teacher_id && String(r.created_by_teacher_id) === String(currentUserId));
         let actionBtnHtml = "";
         if (isOwnReward) {
-          actionBtnHtml = '<span class="reward-tag-self">Создано вами</span>';
+          actionBtnHtml = `<span class="reward-tag-self">Создано вами</span> <button class="sferum-btn btn-danger-sm" onclick="handleDeleteReward(${r.id})">Удалить</button>`;
         } else if (isTeacherInChat) {
-          actionBtnHtml = '<span class="reward-tag-teacher">Для учеников</span>';
+          actionBtnHtml = `<span class="reward-tag-teacher">Для учеников</span> <button class="sferum-btn btn-danger-sm" onclick="handleDeleteReward(${r.id})">Удалить</button>`;
         } else {
           actionBtnHtml = `<button class="sferum-btn btn-primary" onclick="handleClaimReward(${r.id}, ${r.cost_spasibki})">Обменять</button>`;
         }
@@ -620,6 +620,7 @@ async function loadTeacherData() {
     }
 
     loadStudentsDropdown();
+    loadTeacherRewards();
 
   } catch (err) {
     listContainer.innerHTML = '<p class="empty-state-text">Кабинет доступен учителям.</p>';
@@ -689,10 +690,70 @@ async function handleCreateReward(e) {
     if (!res.ok) throw new Error("Ошибка публикации");
     showToast("Награда добавлена в лавку!");
     document.getElementById("create-reward-form").reset();
-    document.getElementById("rew-price").value = 30;
+    document.getElementById("rew-price").value = 3;
+    loadRewards();
+    loadTeacherRewards();
 
   } catch (err) {
     showToast("Не удалось добавить награду");
+  }
+}
+
+async function loadTeacherRewards() {
+  const container = document.getElementById("teacher-rewards-list");
+  const countBadge = document.getElementById("teacher-rewards-count");
+  if (!container) return;
+
+  try {
+    let url = "/api/rewards";
+    if (teacherSelectedChatId && teacherSelectedChatId !== "all") {
+      url += `?chat_id=${teacherSelectedChatId}`;
+    }
+    const res = await fetch(url);
+    const rewards = await res.json();
+    if (countBadge) countBadge.textContent = rewards.length;
+
+    if (!rewards.length) {
+      container.innerHTML = '<p class="empty-state-text">Активных наград пока нет.</p>';
+      return;
+    }
+
+    container.innerHTML = rewards.map(r => `
+      <div class="teacher-reward-row">
+        <div class="reward-main-col">
+          <div class="reward-item-title">${escapeHtml(r.title)}</div>
+          <div class="reward-item-desc">${escapeHtml(r.description)}</div>
+          <div class="reward-cost-tag">${r.cost_spasibki} спасибок</div>
+        </div>
+        <div>
+          <button class="sferum-btn btn-danger-sm" onclick="handleDeleteReward(${r.id})">Удалить</button>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    container.innerHTML = '<p class="empty-state-text">Не удалось загрузить награды</p>';
+  }
+}
+
+async function handleDeleteReward(rewardId) {
+  if (!confirm("Вы уверены, что хотите удалить эту награду?")) return;
+  try {
+    const res = await fetch(`/api/teacher/rewards/${rewardId}/delete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": currentUserId,
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Не удалось удалить награду");
+    }
+    showToast("Награда удалена");
+    loadRewards();
+    loadTeacherData();
+  } catch (err) {
+    showToast(err.message || "Ошибка удаления");
   }
 }
 

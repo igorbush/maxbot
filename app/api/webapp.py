@@ -597,6 +597,25 @@ async def create_reward(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+@router.delete("/teacher/rewards/{reward_id}")
+@router.post("/teacher/rewards/{reward_id}/delete")
+async def delete_reward(
+    reward_id: int,
+    current_teacher: User = Depends(require_teacher),
+    session: AsyncSession = Depends(get_db_session),
+):
+    try:
+        await TeacherService.delete_reward(
+            session=session,
+            teacher_max_id=current_teacher.max_user_id,
+            reward_id=reward_id,
+        )
+        return {"status": "ok", "message": "Награда удалена"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
 @router.post("/teacher/award-badge")
 async def award_teacher_badge(
     body: AwardBadgeRequest,

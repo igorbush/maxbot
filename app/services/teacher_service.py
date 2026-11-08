@@ -60,23 +60,6 @@ class TeacherService:
         if reward.created_by_teacher_id and str(reward.created_by_teacher_id) == str(student_max_id):
             raise ValueError("Преподаватель не может обменивать созданные им награды")
 
-        target_chat = chat_id or reward.chat_id
-        if target_chat and target_chat != "all":
-            mem_teacher = await session.execute(
-                select(ChatMember).where(
-                    ChatMember.chat_max_id == target_chat,
-                    ChatMember.user_max_id == student_max_id,
-                    ChatMember.role == "teacher",
-                )
-            )
-            if mem_teacher.scalars().first() is not None:
-                raise ValueError("Преподаватель не может обменивать награды в своем учебном чате")
-            chat_owner = await session.execute(
-                select(Chat).where(Chat.max_chat_id == target_chat, Chat.owner_id == student_max_id)
-            )
-            if chat_owner.scalars().first() is not None:
-                raise ValueError("Преподаватель не может обменивать награды в своем учебном чате")
-
         if student.balance_spasibki < reward.cost_spasibki:
             raise ValueError("Недостаточно спасибок для обмена")
 
@@ -229,6 +212,61 @@ class TeacherService:
         session.add(audit)
         await session.commit()
         return reward
+
+    @classmethod
+    async def delete_reward(
+        cls,
+        session: AsyncSession,
+        teacher_max_id: str,
+        reward_id: int,
+    ) -> bool:
+        await cls._require_teacher(session, teacher_max_id)
+
+        rew_res = await session.execute(
+            select(Reward).where(Reward.id == reward_id)
+        )
+        reward = rew_res.scalar_one_or_none()
+        if reward is None:
+            raise ValueError("Награда не найдена")
+
+        is_creator = str(reward.created_by_teacher_id) == str(teacher_max_id)
+        is_chat_teacher = False
+        if reward.chat_id:
+            cm = await session.execute(
+                select(ChatMember).where(
+                    ChatMember.chat_max_id == reward.chat_id,
+                    ChatMember.user_max_id == teacher_max_id,
+                    ChatMember.role == "teacher",
+                )
+            )
+            if cm.scalars().first() is not None:
+                is_chat_teacher = True
+            c_owner = await session.execute(
+                select(Chat).where(Chat.max_chat_id == reward.chat_id, Chat.owner_id == teacher_max_id)
+            )
+            if c_owner.scalars().first() is not None:
+                is_chat_teacher = True
+
+        u_res = await session.execute(select(User).where(User.max_user_id == teacher_max_id))
+        u = u_res.scalar_one_or_none()
+        is_admin = bool(u and u.role == "admin")
+
+        if not (is_creator or is_chat_teacher or is_admin):
+            raise PermissionError("Вы можете удалять только свои награды или награды вашего учебного чата")
+
+        reward.is_active = False
+        audit = AuditLog(
+            actor_max_id=teacher_max_id,
+            target_user_max_id=None,
+            target_type="reward",
+            target_id=str(reward.id),
+            action="delete_reward",
+            details=f"reward_id={reward_id},title={reward.title}",
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(audit)
+        await session.commit()
+        return True
 
     @classmethod
     async def get_teacher_overview(

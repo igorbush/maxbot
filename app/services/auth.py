@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException, Query, status
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database.models import User
+from app.database.models import User, ChatMember
 from app.database.session import get_db_session
 
 async def get_current_user(
@@ -38,7 +38,7 @@ async def get_current_user(
         await session.commit()
         await session.refresh(user)
     else:
-        if clean_name and (user.display_name.startswith("Ученик ") or user.display_name.startswith("Школьник ") or user.display_name.startswith("Участник ")):
+        if clean_name and (user.display_name.startswith("Ученик ") or user.display_name.startswith("Участник ")):
             user.display_name = clean_name
             await session.commit()
             await session.refresh(user)
@@ -47,10 +47,16 @@ async def get_current_user(
 
 async def require_teacher(
     current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
 ) -> User:
-    if current_user.role not in ("teacher", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Доступ разрешен только учителям",
-        )
-    return current_user
+    if current_user.role in ("teacher", "admin"):
+        return current_user
+    cm_res = await session.execute(
+        select(ChatMember).where(ChatMember.user_max_id == current_user.max_user_id, ChatMember.role == "teacher")
+    )
+    if cm_res.scalars().first() is not None:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Доступ разрешен только учителям",
+    )

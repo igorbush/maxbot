@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#edeef0" id="meta-theme-color">
   <title>Лига Помощников | Сферум</title>
   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -224,6 +224,17 @@
       </div>
 
       <div class="sferum-card">
+        <div class="card-header-row">
+          <h3>Награды в этом чате</h3>
+          <span class="count-pill" id="teacher-rewards-count">0</span>
+        </div>
+        <p class="card-subtext">Активные бонусы от учителей. Вы можете удалить неактуальные награды.</p>
+        <div id="teacher-rewards-list" class="teacher-rewards-list">
+          <div class="state-loading">Загрузка наград...</div>
+        </div>
+      </div>
+
+      <div class="sferum-card">
         <h3>Добавить новую награду</h3>
         <p class="card-subtext">Создайте награду для этого чата или для всех ваших чатов.</p>
         <form id="create-reward-form" onsubmit="handleCreateReward(event)">
@@ -322,6 +333,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

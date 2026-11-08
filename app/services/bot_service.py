@@ -334,6 +334,16 @@ async def on_ask_command(event: MessageCreated):
     chat_title = event.chat.title if is_group else "Учебный чат"
     owner_id = str(event.chat.owner_id) if event.chat and getattr(event.chat, "owner_id", None) else None
 
+    if not is_group:
+        await event.message.reply(
+            text=(
+                "💡 Команда /ask работает только в учебных групповых чатах!\n\n"
+                "Добавьте бота в ваш групповой чат и задайте вопрос там, "
+                "чтобы другие участники могли ответить реплаем и получить баллы взаимопомощи."
+            )
+        )
+        return
+
     raw_text = event.message.body.text if event.message and event.message.body else ""
     words = raw_text.strip().split()
     if words and words[0].startswith("@"):
@@ -509,6 +519,12 @@ async def on_generic_message(event: MessageCreated):
         if not question:
             return
 
+        if helper_id and question.author_max_id and str(helper_id) == str(question.author_max_id):
+            await event.message.reply(
+                text="Вы не можете отвечать на собственный вопрос для начисления баллов."
+            )
+            return
+
         await ensure_user_and_chat(
             session,
             user_id=helper_id,
@@ -594,6 +610,26 @@ async def on_callback_query(event: MessageCallback):
             chat_id = question.group_chat_id
             q_author_name = question.author_name or "Автор"
 
+            if user_id and question.author_max_id and str(user_id) != str(question.author_max_id):
+                is_teacher_here = False
+                res_u = await session.execute(select(User).where(User.max_user_id == user_id))
+                u_obj = res_u.scalar_one_or_none()
+                if u_obj and u_obj.role in ("teacher", "admin"):
+                    is_teacher_here = True
+                if not is_teacher_here:
+                    try:
+                        await event.ack(notification="Только автор вопроса может подтвердить ответ")
+                    except Exception:
+                        pass
+                    return
+
+            if str(answer.author_max_id) == str(question.author_max_id):
+                try:
+                    await event.edit(text="Нельзя подтверждать помощь самому себе.", attachments=[])
+                except Exception:
+                    await event.ack(notification="Нельзя подтверждать помощь самому себе")
+                return
+
             if answer.status == "accepted":
                 already_handled = True
                 is_already_accepted = True
@@ -666,9 +702,25 @@ async def on_callback_query(event: MessageCallback):
         async with async_session_factory() as session:
             res_ans = await session.execute(select(Answer).where(Answer.id == ans_id))
             answer = res_ans.scalar_one_or_none()
-            if answer and answer.status == "pending":
-                answer.status = "rejected"
-                await session.commit()
+            if answer:
+                res_q = await session.execute(select(Question).where(Question.id == answer.question_id))
+                question = res_q.scalar_one_or_none()
+                if question and user_id and question.author_max_id and str(user_id) != str(question.author_max_id):
+                    is_teacher_here = False
+                    res_u = await session.execute(select(User).where(User.max_user_id == user_id))
+                    u_obj = res_u.scalar_one_or_none()
+                    if u_obj and u_obj.role in ("teacher", "admin"):
+                        is_teacher_here = True
+                    if not is_teacher_here:
+                        try:
+                            await event.ack(notification="Только автор вопроса может отклонить ответ")
+                        except Exception:
+                            pass
+                        return
+
+                if answer.status == "pending":
+                    answer.status = "rejected"
+                    await session.commit()
 
         try:
             await event.edit(
