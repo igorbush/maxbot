@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from maxapi import Bot
-from maxapi.types import BotCommand
 
 from app.config import get_settings
 from app.database.session import init_db
@@ -19,19 +18,12 @@ bot = None
 if settings.MAX_BOT_TOKEN:
     bot = Bot(token=settings.MAX_BOT_TOKEN)
 
-async def register_bot_commands(target_bot: Bot):
+async def clear_bot_commands(target_bot: Bot):
     try:
-        commands = [
-            BotCommand(name="ask", description="Задать вопрос классу"),
-            BotCommand(name="top", description="Рейтинг помощников этого чата"),
-            BotCommand(name="digest", description="Итоги недели в этом чате"),
-            BotCommand(name="start", description="Главное меню и профиль"),
-            BotCommand(name="help", description="Инструкция по взаимопомощи"),
-        ]
-        await target_bot.set_commands(*commands)
-        print("[БОТ] Команды бота (/ask, /top, /digest, /start, /help) зарегистрированы в MAX API")
+        await target_bot.set_commands()
+        print("[БОТ] Меню команд при слеше очищено в MAX API")
     except Exception as e:
-        print(f"[БОТ] Регистрация команд: {e}")
+        print(f"[БОТ] Очистка команд: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,7 +37,7 @@ async def lifespan(app: FastAPI):
             print(f"[БОТ] Авторизован как @{bot.me.username} ({bot.me.first_name})")
         except Exception as e:
             print(f"[БОТ] get_me: {e}")
-        await register_bot_commands(bot)
+        await clear_bot_commands(bot)
         await sync_bot_chats(bot)
         print("[БОТ] Запуск опроса MAX API (библиотека maxapi)...")
         bot_task = asyncio.create_task(dp.start_polling(bot))

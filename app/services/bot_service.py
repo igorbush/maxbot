@@ -560,6 +560,31 @@ async def on_ask_command(event: MessageCreated):
     user_mid = str(event.message.body.mid) if event.message and event.message.body else f"msg_{user_id}"
 
     async with async_session_factory() as session:
+        cm_check = await session.execute(
+            select(ChatMember).where(
+                ChatMember.chat_max_id == chat_id,
+                ChatMember.user_max_id == user_id,
+            )
+        )
+        cm_row = cm_check.scalar_one_or_none()
+        is_user_teacher = False
+        if cm_row:
+            if cm_row.role in ("teacher", "admin"):
+                is_user_teacher = True
+        else:
+            u_check = await session.execute(select(User).where(User.max_user_id == user_id))
+            u_row = u_check.scalar_one_or_none()
+            if u_row and u_row.role in ("teacher", "admin"):
+                is_user_teacher = True
+            elif owner_id and str(owner_id) == str(user_id):
+                is_user_teacher = True
+
+        if is_user_teacher:
+            await event.message.reply(
+                text="Учителя находятся вне игрового процесса и не публикуют вопросы в Лигу Помощников."
+            )
+            return
+
         await ensure_user_and_chat(
             session,
             user_id=user_id,
@@ -734,14 +759,14 @@ async def on_generic_message(event: MessageCreated):
                 )
             )
             cm_row = cm_check.scalar_one_or_none()
-            if cm_row and cm_row.role in ("teacher", "admin"):
-                is_helper_teacher = True
-
-        if not is_helper_teacher and helper_id:
-            u_check = await session.execute(select(User).where(User.max_user_id == helper_id))
-            u_row = u_check.scalar_one_or_none()
-            if u_row and u_row.role in ("teacher", "admin"):
-                is_helper_teacher = True
+            if cm_row:
+                if cm_row.role in ("teacher", "admin"):
+                    is_helper_teacher = True
+            else:
+                u_check = await session.execute(select(User).where(User.max_user_id == helper_id))
+                u_row = u_check.scalar_one_or_none()
+                if u_row and u_row.role in ("teacher", "admin"):
+                    is_helper_teacher = True
 
         if is_helper_teacher:
             await event.message.reply(
