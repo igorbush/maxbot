@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: only light;
   --sferum-bg: #edeef0;
   --sferum-card-bg: #ffffff;
   --sferum-border: #e7e8ec;
@@ -30,7 +30,7 @@
 }
 
 html[data-theme="light"], body[data-theme="light"], [data-theme="light"] {
-  color-scheme: light;
+  color-scheme: only light;
   --sferum-bg: #edeef0;
   --sferum-card-bg: #ffffff;
   --sferum-border: #e7e8ec;

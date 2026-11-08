@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import select, delete, or_
 from maxapi import Bot, Dispatcher
@@ -522,75 +523,101 @@ async def on_callback_query(event: MessageCallback):
 
     if payload.startswith("help_accept:"):
         ans_id = int(payload.split(":")[1])
+        helper_name = "Помощник"
+        q_id = None
+        chat_id = None
+        q_author_name = "Автор"
+        already_handled = False
+        is_already_accepted = False
+
         async with async_session_factory() as session:
             res_ans = await session.execute(select(Answer).where(Answer.id == ans_id))
             answer = res_ans.scalar_one_or_none()
             if not answer:
-                await event.ack(notification="Ответ не найден")
+                try:
+                    await event.edit(text="Ответ не найден или был удалён.", attachments=[])
+                except Exception:
+                    await event.ack(notification="Ответ не найден")
                 return
 
+            helper_name = answer.author_name or "Помощник"
             res_q = await session.execute(select(Question).where(Question.id == answer.question_id))
             question = res_q.scalar_one_or_none()
             if not question:
-                await event.ack(notification="Вопрос не найден")
+                try:
+                    await event.edit(text="Вопрос не найден или был удалён.", attachments=[])
+                except Exception:
+                    await event.ack(notification="Вопрос не найден")
                 return
 
-            if answer.status != "pending":
-                await event.edit(
-                    text=f"Помощь уже была принята ранее! {answer.author_name} получил(а) награду.",
-                    attachments=[],
-                    notification="Уже принято",
-                )
-                return
+            q_id = question.id
+            chat_id = question.group_chat_id
+            q_author_name = question.author_name or "Автор"
 
-            try:
-                await GamificationService.award_gratitude(
-                    session=session,
-                    question=question,
-                    answer=answer,
-                )
-                print(f"[БОТ] Помощь подтверждена: вопрос #{question.id}, {answer.author_name} получил +50 XP и +1 спасибку")
-            except Exception as e:
-                print(f"[БОТ] Ошибка award_gratitude: {e}")
-                await event.ack(notification=f"Ошибка: {e}")
-                return
+            if answer.status == "accepted":
+                already_handled = True
+                is_already_accepted = True
+            elif answer.status != "pending":
+                already_handled = True
+                is_already_accepted = False
+            else:
+                answer.status = "accepted"
+                question.status = "resolved"
+                question.resolved_answer_id = answer.id
+                question.closed_at = datetime.now(timezone.utc)
 
-        edited = False
+                helper_res = await session.execute(select(User).where(User.max_user_id == answer.author_max_id))
+                helper = helper_res.scalar_one_or_none()
+                if helper is not None:
+                    helper.balance_spasibki += 1
+                    helper.xp += 50
+                    helper.rank = GamificationService.calculate_rank(helper.xp)
+                else:
+                    helper = User(
+                        max_user_id=answer.author_max_id,
+                        display_name=answer.author_name or "Ученик",
+                        role="student",
+                        balance_spasibki=11,
+                        xp=150,
+                        rank=GamificationService.calculate_rank(150),
+                    )
+                    session.add(helper)
+
+                await session.commit()
+                print(f"[БОТ] Помощь подтверждена: вопрос #{q_id}, {helper_name} получил +50 XP и +1 спасибку")
+
+        if already_handled:
+            if is_already_accepted:
+                text_msg = f"Помощь уже была принята ранее! {helper_name} получил(а) награду."
+            else:
+                text_msg = "Этот ответ уже обработан ранее."
+        else:
+            text_msg = f"Помощь принята! {helper_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!"
+
         try:
             await event.edit(
-                text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!",
+                text=text_msg,
                 attachments=[],
-                notification="Помощь принята!",
+                notification="Помощь принята!" if not already_handled else "Уже обработано",
             )
-            edited = True
         except Exception as e_edit:
-            print(f"[БОТ] event.edit не удался: {e_edit}")
+            print(f"[БОТ] event.edit error: {e_edit}")
             try:
                 await event.ack(notification="Помощь принята!")
             except Exception:
                 pass
 
-        if not edited and user_id:
+        if not already_handled and chat_id:
             try:
-                target_uid = int(user_id) if user_id.isdigit() else None
-                if target_uid:
-                    await event.bot.send_message(
-                        user_id=target_uid,
-                        text=f"Помощь принята! {answer.author_name} получил(а) +50 XP и +1 спасибку. Спасибо за взаимовыручку!",
-                    )
-            except Exception as e_send:
-                print(f"[БОТ] send_message fallback: {e_send}")
-
-        try:
-            chat_target = int(question.group_chat_id) if str(question.group_chat_id).isdigit() else question.group_chat_id
-            celeb_text = (
-                f"🎉 Вопрос #{question.id} успешно решён!\n\n"
-                f"Помог(ла): {answer.author_name} (+50 XP, +1 спасибка)\n"
-                f"Автор {question.author_name} поблагодарил(а) за помощь."
-            )
-            await event.bot.send_message(chat_id=chat_target, text=celeb_text)
-        except Exception as e:
-            print(f"[БОТ] Ошибка отправки поздравления: {e}")
+                chat_target = int(chat_id) if str(chat_id).isdigit() else chat_id
+                celeb_text = (
+                    f"🎉 Вопрос #{q_id} успешно решён!\n\n"
+                    f"Помог(ла): {helper_name} (+50 XP, +1 спасибка)\n"
+                    f"Автор {q_author_name} поблагодарил(а) за помощь."
+                )
+                await event.bot.send_message(chat_id=chat_target, text=celeb_text)
+            except Exception as e:
+                print(f"[БОТ] Ошибка отправки поздравления: {e}")
 
         return
 

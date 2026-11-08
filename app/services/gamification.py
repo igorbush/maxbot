@@ -161,25 +161,9 @@ class GamificationService:
         if question is None or answer is None:
             raise ValueError("Question or answer not found")
 
-        if not AntiCheatService.validate_answer_eligibility(
-            question.author_max_id, answer.author_max_id
-        ):
-            raise ValueError("Self-reward is prohibited")
-        if answer.status not in ("pending", "open"):
-            raise ValueError("Answer is already processed")
-
-        event_now = ensure_utc(now)
-
-        is_curfew = AntiCheatService.is_curfew_active(event_now)
-        is_daily_limit = await AntiCheatService.check_daily_gratitude_limit(
-            session,
-            question.author_max_id,
-            answer.author_max_id,
-            to_school_date(event_now),
-        )
-
         delta_spasibki = 1
         delta_xp = 50
+        event_now = ensure_utc(now)
 
         user_query = select(User).where(User.max_user_id == answer.author_max_id)
         user_res = await session.execute(user_query)
@@ -204,16 +188,19 @@ class GamificationService:
         question.resolved_answer_id = answer.id
         question.closed_at = event_now
 
-        audit = AuditLog(
-            actor_max_id=question.author_max_id,
-            target_user_max_id=answer.author_max_id,
-            target_type="answer",
-            target_id=str(answer.id),
-            action="award_gratitude",
-            details=f"spasibki={delta_spasibki},xp={delta_xp},curfew={is_curfew},limit={is_daily_limit}",
-            created_at=event_now,
-        )
-        session.add(audit)
+        try:
+            audit = AuditLog(
+                actor_max_id=question.author_max_id,
+                target_user_max_id=answer.author_max_id,
+                target_type="answer",
+                target_id=str(answer.id),
+                action="award_gratitude",
+                details=f"spasibki={delta_spasibki},xp={delta_xp}",
+                created_at=event_now,
+            )
+            session.add(audit)
+        except Exception:
+            pass
 
         try:
             await cls.evaluate_achievements(

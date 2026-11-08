@@ -7,6 +7,7 @@ let selectedChatTitle = "Учебный класс";
 let currentLeaderboardPeriod = "all_time";
 let currentLeaderboardScope = "class";
 let teacherSelectedChatId = "all";
+let lastThemeToggle = 0;
 
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
@@ -16,25 +17,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const themeBtn = document.getElementById("theme-toggle-btn");
   if (themeBtn) {
     themeBtn.addEventListener("click", toggleTheme);
-    themeBtn.addEventListener("touchend", (e) => {
-      toggleTheme(e);
-    });
   }
 });
 
 function initTheme() {
   try {
+    for (let i = 1; i <= 7; i++) {
+      localStorage.removeItem("sferum_theme_v" + i);
+    }
     localStorage.removeItem("sferum_theme");
-    localStorage.removeItem("sferum_theme_v2");
-    localStorage.removeItem("sferum_theme_v3");
-    localStorage.removeItem("sferum_theme_v4");
-    localStorage.removeItem("sferum_theme_v5");
-    localStorage.removeItem("sferum_theme_v6");
   } catch (e) {}
 
   let savedTheme = "light";
   try {
-    savedTheme = localStorage.getItem("sferum_theme_v7") || "light";
+    savedTheme = localStorage.getItem("sferum_theme_v8") || "light";
   } catch (e) {}
 
   applyTheme(savedTheme === "dark" ? "dark" : "light");
@@ -45,11 +41,17 @@ function toggleTheme(event) {
     if (typeof event.preventDefault === "function") event.preventDefault();
     if (typeof event.stopPropagation === "function") event.stopPropagation();
   }
+  const now = Date.now();
+  if (now - lastThemeToggle < 350) {
+    return;
+  }
+  lastThemeToggle = now;
+
   const current = document.documentElement.getAttribute("data-theme") || "light";
   const next = current === "light" ? "dark" : "light";
   applyTheme(next);
   try {
-    localStorage.setItem("sferum_theme_v7", next);
+    localStorage.setItem("sferum_theme_v8", next);
   } catch (e) {}
   if (typeof showToast === "function") {
     showToast(next === "dark" ? "Тёмная тема" : "Светлая тема");
@@ -59,15 +61,27 @@ function toggleTheme(event) {
 function applyTheme(theme) {
   const safeTheme = theme === "dark" ? "dark" : "light";
   document.documentElement.setAttribute("data-theme", safeTheme);
-  document.documentElement.style.colorScheme = safeTheme;
+  document.documentElement.style.colorScheme = safeTheme === "light" ? "only light" : "dark";
+  document.documentElement.style.backgroundColor = safeTheme === "dark" ? "#141415" : "#edeef0";
+  document.documentElement.style.color = safeTheme === "dark" ? "#e1e3e6" : "#000000";
+
   if (document.body) {
     document.body.setAttribute("data-theme", safeTheme);
-    document.body.style.colorScheme = safeTheme;
+    document.body.style.colorScheme = safeTheme === "light" ? "only light" : "dark";
+    document.body.style.backgroundColor = safeTheme === "dark" ? "#141415" : "#edeef0";
+    document.body.style.color = safeTheme === "dark" ? "#e1e3e6" : "#000000";
   }
+
   const metaTheme = document.getElementById("meta-theme-color");
   if (metaTheme) {
     metaTheme.setAttribute("content", safeTheme === "dark" ? "#141415" : "#edeef0");
   }
+
+  const metaScheme = document.getElementById("meta-color-scheme");
+  if (metaScheme) {
+    metaScheme.setAttribute("content", safeTheme === "light" ? "only light" : "dark");
+  }
+
   const sunIcon = document.getElementById("theme-icon-sun");
   const moonIcon = document.getElementById("theme-icon-moon");
   if (sunIcon && moonIcon) {
