@@ -309,15 +309,26 @@ function populateTeacherClassDropdowns() {
   const selectElem = document.getElementById("teacher-class-select");
   const rewSelectElem = document.getElementById("rew-chat-select");
 
-  let options = '<option value="all">Все чаты</option>';
-  options += availableChats.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join("");
+  const teacherChats = availableChats.filter(c => c.role === "teacher");
+  let options = "";
+  if (teacherChats.length > 1) {
+    options += '<option value="all">Все мои чаты</option>';
+  }
+  options += teacherChats.map(c => `<option value="${c.id}">${escapeHtml(c.title)}</option>`).join("");
 
   if (selectElem) {
-    selectElem.innerHTML = options;
-    selectElem.value = teacherSelectedChatId;
+    selectElem.innerHTML = options || '<option value="">Нет учительских чатов</option>';
+    if (teacherSelectedChatId === "all" && teacherChats.length > 1) {
+      selectElem.value = "all";
+    } else if (teacherChats.some(c => c.id === teacherSelectedChatId)) {
+      selectElem.value = teacherSelectedChatId;
+    } else if (teacherChats.length > 0) {
+      teacherSelectedChatId = teacherChats[0].id;
+      selectElem.value = teacherSelectedChatId;
+    }
   }
   if (rewSelectElem) {
-    rewSelectElem.innerHTML = options;
+    rewSelectElem.innerHTML = options || '<option value="all">Для всех чатов</option>';
   }
 }
 

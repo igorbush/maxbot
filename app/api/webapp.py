@@ -244,14 +244,6 @@ async def get_profile(
         else:
             user_chats_map[c.max_chat_id].role = "teacher"
 
-    if current_user.role in ("teacher", "admin"):
-        all_chats_res = await session.execute(
-            select(Chat).where(Chat.title != "Диалог", not_(Chat.title.ilike("%диалог%"))).order_by(Chat.title.asc())
-        )
-        for c in all_chats_res.scalars().all():
-            if c.max_chat_id not in user_chats_map:
-                user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
-
     user_chats = list(user_chats_map.values())
     if not user_chats:
         user_chats = [
@@ -349,14 +341,6 @@ async def get_chats(
             user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
         else:
             user_chats_map[c.max_chat_id].role = "teacher"
-
-    if current_user.role in ("teacher", "admin"):
-        all_chats_res = await session.execute(
-            select(Chat).where(Chat.title != "Диалог", not_(Chat.title.ilike("%диалог%"))).order_by(Chat.title.asc())
-        )
-        for c in all_chats_res.scalars().all():
-            if c.max_chat_id not in user_chats_map:
-                user_chats_map[c.max_chat_id] = ChatItem(id=c.max_chat_id, title=c.title, role="teacher")
 
     my_chats = list(user_chats_map.values())
     if my_chats:
